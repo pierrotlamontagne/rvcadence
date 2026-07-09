@@ -158,17 +158,35 @@ def plan_calendar(
     season_end: date,
     rotation_period_d: float | None = None,
     windows: str | list[tuple[date, date]] = "",
+    target_coord=None,
+    observer_location=None,
+    min_moon_sep_deg: float = 30.0,
 ) -> ScheduleResult:
     """
     High-level entry point: plan an observing calendar directly in real dates.
     `windows` accepts either raw text ("2026-05-01 to 2026-08-18; ...") or an
     already-parsed list of (start, end) date tuples. `periods_d` accepts a
-    single planet period (float) or multiple (a sequence, for multi-planet
-    systems — worst-case/min phase-coverage aggregation across periods).
+    single planet period (float) or multiple (a sequence, worst-case/min
+    phase-coverage aggregation across periods). If `target_coord` (astropy
+    SkyCoord) is given, nights where the Moon is within `min_moon_sep_deg` of
+    the target (at local midnight) are excluded — requires
+    `observer_location` (astropy EarthLocation) and the `moon` extra.
     """
     baseline_days = (season_end - season_start).days
     parsed_windows = parse_obs_windows(windows) if isinstance(windows, str) else windows
     allowed = build_allowed_offsets(season_start, season_end, parsed_windows)
+
+    if target_coord is not None:
+        if observer_location is None:
+            raise ValueError("observer_location is required when target_coord is given")
+        from .moon import moon_allowed_offsets
+
+        moon_allowed = set(
+            moon_allowed_offsets(season_start, season_end, target_coord, observer_location, min_moon_sep_deg)
+        )
+        allowed = [o for o in allowed if o in moon_allowed]
+    elif observer_location is not None:
+        raise ValueError("target_coord is required when observer_location is given")
 
     p_rot = rotation_period_d if rotation_period_d is not None else math.nan
     offsets = build_schedule(n_obs, periods_d, p_rot, allowed, baseline_days)

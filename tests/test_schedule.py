@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from rvcadence.schedule import (
     CandidateScore,
     best_candidate,
@@ -177,3 +179,51 @@ def test_plan_calendar_accepts_multiple_periods():
         season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
     )
     assert result_single == result_list
+
+
+# append to tests/test_schedule.py
+def test_plan_calendar_with_moon_avoidance_drops_polluted_offset_zero():
+    pytest.importorskip("astropy")
+    import astropy.units as u
+    from astropy.coordinates import EarthLocation
+    from rvcadence.moon import moon_coord_at_midnight
+
+    paranal = EarthLocation(lat=-24.6272 * u.deg, lon=-70.4039 * u.deg, height=2635 * u.m)
+    season_start = date(2026, 6, 1)
+    season_end = date(2026, 6, 21)
+    moon_coord = moon_coord_at_midnight(season_start, paranal)
+
+    result = plan_calendar(
+        n_obs=3,
+        periods_d=10.0,
+        season_start=season_start,
+        season_end=season_end,
+        target_coord=moon_coord,
+        observer_location=paranal,
+        min_moon_sep_deg=30.0,
+    )
+    assert season_start not in result.dates
+
+
+def test_plan_calendar_target_coord_without_observer_location_raises():
+    import astropy.units as u
+    from astropy.coordinates import SkyCoord
+    with pytest.raises(ValueError, match="observer_location is required"):
+        plan_calendar(
+            n_obs=2, periods_d=10.0,
+            season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+            target_coord=SkyCoord(ra=10 * u.deg, dec=10 * u.deg),
+        )
+
+
+def test_plan_calendar_observer_location_without_target_coord_raises():
+    pytest.importorskip("astropy")
+    import astropy.units as u
+    from astropy.coordinates import EarthLocation
+    paranal = EarthLocation(lat=-24.6272 * u.deg, lon=-70.4039 * u.deg, height=2635 * u.m)
+    with pytest.raises(ValueError, match="target_coord is required"):
+        plan_calendar(
+            n_obs=2, periods_d=10.0,
+            season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+            observer_location=paranal,
+        )
