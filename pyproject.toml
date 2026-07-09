@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rvcadence"
+version = "0.1.0"
+description = "Greedy observing-calendar scheduler for radial-velocity follow-up campaigns"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "Pierrot Lamontagne", email = "pierrotlamontagne31415@gmail.com" }]
+keywords = ["radial-velocity", "exoplanets", "observation-scheduling", "astronomy"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = []
+
+[project.optional-dependencies]
+moon = ["astropy>=5.0"]
+examples = ["manim>=0.18"]
+dev = ["pytest>=7.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rvcadence"]
