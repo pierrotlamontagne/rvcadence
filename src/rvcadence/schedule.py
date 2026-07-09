@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import date, timedelta
 from statistics import median
 from typing import Sequence
 
 from ._phase import min_phase_separation, min_time_separation
+from .windows import build_allowed_offsets, parse_obs_windows
 
 
 @dataclass
@@ -140,3 +142,37 @@ def spacing_stats(times: list[int]) -> tuple[float, float]:
         return math.nan, math.nan
     gaps = [float(times[i + 1] - times[i]) for i in range(len(times) - 1)]
     return median(gaps), sum(gaps) / len(gaps)
+
+
+@dataclass
+class ScheduleResult:
+    dates: list[date]
+    median_gap_d: float
+    mean_gap_d: float
+
+
+def plan_calendar(
+    n_obs: int,
+    periods_d: float | Sequence[float],
+    season_start: date,
+    season_end: date,
+    rotation_period_d: float | None = None,
+    windows: str | list[tuple[date, date]] = "",
+) -> ScheduleResult:
+    """
+    High-level entry point: plan an observing calendar directly in real dates.
+    `windows` accepts either raw text ("2026-05-01 to 2026-08-18; ...") or an
+    already-parsed list of (start, end) date tuples. `periods_d` accepts a
+    single planet period (float) or multiple (a sequence, for multi-planet
+    systems — worst-case/min phase-coverage aggregation across periods).
+    """
+    baseline_days = (season_end - season_start).days
+    parsed_windows = parse_obs_windows(windows) if isinstance(windows, str) else windows
+    allowed = build_allowed_offsets(season_start, season_end, parsed_windows)
+
+    p_rot = rotation_period_d if rotation_period_d is not None else math.nan
+    offsets = build_schedule(n_obs, periods_d, p_rot, allowed, baseline_days)
+
+    dates = [season_start + timedelta(days=o) for o in offsets]
+    median_gap, mean_gap = spacing_stats(offsets)
+    return ScheduleResult(dates=dates, median_gap_d=median_gap, mean_gap_d=mean_gap)

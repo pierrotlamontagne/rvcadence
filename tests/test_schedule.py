@@ -132,3 +132,48 @@ def test_spacing_stats():
 def test_spacing_stats_too_few_points():
     med, mean = spacing_stats([5])
     assert math.isnan(med) and math.isnan(mean)
+
+
+# append to tests/test_schedule.py
+from datetime import date
+
+from rvcadence.schedule import ScheduleResult, plan_calendar
+
+
+def test_plan_calendar_toy_case():
+    result = plan_calendar(
+        n_obs=3,
+        periods_d=10.0,
+        season_start=date(2026, 1, 1),
+        season_end=date(2026, 1, 21),
+    )
+    assert isinstance(result, ScheduleResult)
+    assert result.dates == [date(2026, 1, 1), date(2026, 1, 6), date(2026, 1, 21)]
+    assert result.median_gap_d == 10.0
+    assert result.mean_gap_d == 10.0
+
+
+def test_plan_calendar_accepts_window_text():
+    result = plan_calendar(
+        n_obs=2,
+        periods_d=10.0,
+        season_start=date(2026, 1, 1),
+        season_end=date(2026, 1, 21),
+        windows="2026-01-05 to 2026-01-15",
+    )
+    assert all(date(2026, 1, 5) <= d <= date(2026, 1, 15) for d in result.dates)
+
+
+def test_plan_calendar_accepts_multiple_periods():
+    # Plumbing check: a single-element list must behave identically to the
+    # bare-float form (the aggregation logic itself is unit-tested in
+    # test_schedule.py's evaluate_candidate tests, Task 4).
+    result_single = plan_calendar(
+        n_obs=3, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+    )
+    result_list = plan_calendar(
+        n_obs=3, periods_d=[10.0],
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+    )
+    assert result_single == result_list
