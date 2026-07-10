@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install core + dev + moon extras
-        run: pip install -e ".[dev,moon]"
+      - name: Install core + dev + astro extras
+        run: pip install -e ".[dev,astro]"
       - name: Run tests
         run: pytest -v

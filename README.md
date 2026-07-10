@@ -17,7 +17,7 @@ Full-quality version: [`examples/explainer/CadenceGreedyExplainer.mp4`](examples
 
 ```bash
 pip install rvcadence          # core scheduler, zero dependencies
-pip install rvcadence[moon]    # + lunar pollution avoidance (astropy)
+pip install rvcadence[astro]   # + name/site resolution, visibility, lunar pollution avoidance (astropy)
 ```
 
 ## Quickstart
@@ -101,7 +101,7 @@ sync with the real algorithm.
 ```bash
 git clone <repo-url>
 cd rvcadence
-pip install -e ".[dev,moon]"
+pip install -e ".[dev,astro]"
 pytest
 ```
 
