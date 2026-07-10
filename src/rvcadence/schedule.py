@@ -4,10 +4,13 @@ import math
 from dataclasses import dataclass
 from datetime import date, timedelta
 from statistics import median
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from ._phase import min_phase_separation, min_time_separation
 from .windows import build_allowed_offsets, parse_obs_windows
+
+if TYPE_CHECKING:
+    from astropy.coordinates import EarthLocation, SkyCoord
 
 
 @dataclass
@@ -158,35 +161,69 @@ def plan_calendar(
     season_end: date,
     rotation_period_d: float | None = None,
     windows: str | list[tuple[date, date]] = "",
-    target_coord=None,
-    observer_location=None,
-    min_moon_sep_deg: float = 30.0,
+    target_coord: "str | SkyCoord | None" = None,
+    observer_location: "str | EarthLocation | None" = None,
+    min_moon_sep_deg: float | None = 30.0,
+    min_altitude_deg: float | None = None,
+    twilight_sun_alt_deg: float = -18.0,
 ) -> ScheduleResult:
     """
     High-level entry point: plan an observing calendar directly in real dates.
+
     `windows` accepts either raw text ("2026-05-01 to 2026-08-18; ...") or an
     already-parsed list of (start, end) date tuples. `periods_d` accepts a
     single planet period (float) or multiple (a sequence, worst-case/min
-    phase-coverage aggregation across periods). If `target_coord` (astropy
-    SkyCoord) is given, nights where the Moon is within `min_moon_sep_deg` of
-    the target (at local midnight) are excluded — requires
-    `observer_location` (astropy EarthLocation) and the `moon` extra.
+    phase-coverage aggregation across periods).
+
+    `target_coord`/`observer_location` accept either already-resolved
+    astropy objects (SkyCoord/EarthLocation) or plain name strings (resolved
+    once, via rvcadence.target, printing the resolved value). If given,
+    nights are additionally restricted by:
+      - moon avoidance: excluded if the Moon is within `min_moon_sep_deg` of
+        the target at local midnight (skipped if min_moon_sep_deg is None).
+      - visibility: excluded unless the target is at or above
+        `min_altitude_deg` AND the Sun is at or below `twilight_sun_alt_deg`,
+        both evaluated at the target's transit time that night (skipped if
+        min_altitude_deg is None, the default — there is no universally
+        correct altitude threshold).
+    All supplied constraint types (windows / moon / visibility) intersect.
     """
     baseline_days = (season_end - season_start).days
     parsed_windows = parse_obs_windows(windows) if isinstance(windows, str) else windows
     allowed = build_allowed_offsets(season_start, season_end, parsed_windows)
 
-    if target_coord is not None:
-        if observer_location is None:
-            raise ValueError("observer_location is required when target_coord is given")
-        from .moon import moon_allowed_offsets
-
-        moon_allowed = set(
-            moon_allowed_offsets(season_start, season_end, target_coord, observer_location, min_moon_sep_deg)
-        )
-        allowed = [o for o in allowed if o in moon_allowed]
-    elif observer_location is not None:
+    if target_coord is not None and observer_location is None:
+        raise ValueError("observer_location is required when target_coord is given")
+    if observer_location is not None and target_coord is None:
         raise ValueError("target_coord is required when observer_location is given")
+
+    if target_coord is not None:
+        if isinstance(target_coord, str) or isinstance(observer_location, str):
+            from .target import resolve_site_name, resolve_target_name
+
+            if isinstance(target_coord, str):
+                target_coord = resolve_target_name(target_coord)
+            if isinstance(observer_location, str):
+                observer_location = resolve_site_name(observer_location)
+
+        if min_moon_sep_deg is not None:
+            from .moon import moon_allowed_offsets
+
+            moon_allowed = set(
+                moon_allowed_offsets(season_start, season_end, target_coord, observer_location, min_moon_sep_deg)
+            )
+            allowed = [o for o in allowed if o in moon_allowed]
+
+        if min_altitude_deg is not None:
+            from .visibility import visibility_allowed_offsets
+
+            vis_allowed = set(
+                visibility_allowed_offsets(
+                    season_start, season_end, target_coord, observer_location,
+                    min_altitude_deg, twilight_sun_alt_deg,
+                )
+            )
+            allowed = [o for o in allowed if o in vis_allowed]
 
     p_rot = rotation_period_d if rotation_period_d is not None else math.nan
     offsets = build_schedule(n_obs, periods_d, p_rot, allowed, baseline_days)

@@ -2,6 +2,12 @@ import math
 
 import pytest
 
+try:
+    import astropy.units as u
+    from astropy.coordinates import EarthLocation, SkyCoord
+except ImportError:
+    pass  # individual tests below call pytest.importorskip("astropy") before using u/EarthLocation/SkyCoord
+
 from rvcadence.schedule import (
     CandidateScore,
     best_candidate,
@@ -227,3 +233,80 @@ def test_plan_calendar_observer_location_without_target_coord_raises():
             season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
             observer_location=paranal,
         )
+
+
+def test_plan_calendar_resolves_string_target_and_site(capsys):
+    pytest.importorskip("astropy")
+    try:
+        result = plan_calendar(
+            n_obs=2,
+            periods_d=10.0,
+            season_start=date(2026, 1, 15),
+            season_end=date(2026, 1, 25),
+            target_coord="Sirius",
+            observer_location="Paranal Observatory",
+            min_altitude_deg=30.0,
+            min_moon_sep_deg=None,
+        )
+    except Exception as exc:
+        pytest.skip(f"Name resolution unavailable: {exc}")
+    assert len(result.dates) == 2
+    captured = capsys.readouterr()
+    assert "Sirius" in captured.out and "Paranal Observatory" in captured.out
+
+
+def test_plan_calendar_min_altitude_deg_excludes_never_visible_target():
+    pytest.importorskip("astropy")
+    paranal = EarthLocation(lat=-24.6272 * u.deg, lon=-70.4039 * u.deg, height=2635 * u.m)
+    polaris = SkyCoord(ra=37.95456067 * u.deg, dec=89.26410897 * u.deg)
+    with pytest.raises(ValueError, match="No candidate dates"):
+        plan_calendar(
+            n_obs=2,
+            periods_d=10.0,
+            season_start=date(2026, 1, 15),
+            season_end=date(2026, 1, 25),
+            target_coord=polaris,
+            observer_location=paranal,
+            min_altitude_deg=0.0,
+            min_moon_sep_deg=None,
+        )
+
+
+def test_plan_calendar_windows_and_visibility_intersect():
+    pytest.importorskip("astropy")
+    paranal = EarthLocation(lat=-24.6272 * u.deg, lon=-70.4039 * u.deg, height=2635 * u.m)
+    sirius = SkyCoord(ra=101.28715533 * u.deg, dec=-16.71611586 * u.deg)  # always visible in this range
+    result = plan_calendar(
+        n_obs=2,
+        periods_d=10.0,
+        season_start=date(2026, 1, 1),
+        season_end=date(2026, 1, 31),
+        windows="2026-01-15 to 2026-01-25",
+        target_coord=sirius,
+        observer_location=paranal,
+        min_altitude_deg=30.0,
+        min_moon_sep_deg=None,
+    )
+    assert all(date(2026, 1, 15) <= d <= date(2026, 1, 25) for d in result.dates)
+
+
+def test_plan_calendar_min_moon_sep_deg_none_skips_moon_check():
+    # Moon-coincident target would normally be excluded by the default
+    # min_moon_sep_deg=30.0; passing None must let it through instead.
+    pytest.importorskip("astropy")
+    from rvcadence.moon import moon_coord_at_midnight
+
+    paranal = EarthLocation(lat=-24.6272 * u.deg, lon=-70.4039 * u.deg, height=2635 * u.m)
+    season_start = date(2026, 6, 1)
+    moon_coord = moon_coord_at_midnight(season_start, paranal)
+
+    result = plan_calendar(
+        n_obs=2,
+        periods_d=10.0,
+        season_start=season_start,
+        season_end=date(2026, 6, 21),
+        target_coord=moon_coord,
+        observer_location=paranal,
+        min_moon_sep_deg=None,
+    )
+    assert season_start in result.dates
