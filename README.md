@@ -38,6 +38,21 @@ print(result.dates)
 print(f"median gap: {result.median_gap_d} d, mean gap: {result.mean_gap_d} d")
 ```
 
+Or let `rvcadence` compute visibility itself, from a target name and site,
+instead of hand-typing windows (requires `pip install rvcadence[astro]`):
+
+```python
+result = plan_calendar(
+    n_obs=20,
+    periods_d=9.53,
+    season_start=date(2026, 5, 1),
+    season_end=date(2027, 4, 30),
+    target_coord="K2-182",
+    observer_location="Paranal Observatory",
+    min_altitude_deg=30.0,
+)
+```
+
 For a multi-planet system, pass a list of periods — coverage is optimized
 for the *worst-covered* planet at each step, not an average:
 
@@ -50,7 +65,34 @@ result = plan_calendar(
 )
 ```
 
-With lunar avoidance (requires `pip install rvcadence[moon]`):
+### Composable constraints
+
+`windows` text, lunar avoidance, and astropy-computed visibility are
+independent, composable constraints — any subset may be supplied, and
+supplied constraints **intersect**:
+
+- `windows`: manually-specified date ranges (string or pre-parsed list).
+- `min_moon_sep_deg` (needs `target_coord` + `observer_location`): excludes
+  nights where the Moon is within this separation of the target, evaluated
+  at local solar midnight. Default 30°, a widely-used rule-of-thumb
+  avoidance radius against lunar scattered-light contamination in
+  high-resolution spectroscopy; pass `None` to disable even when a target is
+  given. Nights are sunset-labeled (the night of date `D` runs from sunset
+  on `D` to sunrise on `D+1`).
+- `min_altitude_deg` (needs `target_coord` + `observer_location`): excludes
+  nights where the target doesn't clear this altitude, AND the Sun isn't
+  below `twilight_sun_alt_deg` (default -18°, astronomical twilight), both
+  evaluated **at the target's transit (culmination) time** that night — not
+  local midnight. This deliberately differs from the moon check: for the
+  Moon, midnight-vs-transit is negligible, but for target altitude it would
+  be a real correctness bug (a target transiting at 9pm could be wrongly
+  excluded by a midnight-only check on a night it's perfectly observable).
+  Off by default (`None`) — there is no universally correct altitude.
+
+`target_coord`/`observer_location` accept either already-resolved astropy
+objects (`SkyCoord`/`EarthLocation`) or plain name strings — a string is
+resolved once per call (CDS Sesame / astropy's site registry) and the
+resolved value is printed for confirmation.
 
 ```python
 import astropy.units as u
@@ -67,14 +109,9 @@ result = plan_calendar(
     target_coord=target,
     observer_location=paranal,
     min_moon_sep_deg=30.0,
+    min_altitude_deg=30.0,
 )
 ```
-
-The default 30° threshold is a widely-used rule-of-thumb avoidance radius
-against lunar scattered-light contamination in high-resolution spectroscopy;
-override `min_moon_sep_deg` for a different instrument or tolerance. Nights
-are evaluated at local solar midnight, sunset-labeled (the night of date `D`
-runs from sunset on `D` to sunrise on `D+1`).
 
 ## How it works
 
