@@ -133,6 +133,12 @@ rendered mp4) — the example imports its scoring logic directly from this
 package (see `tests/test_explainer_example.py`), so it can't drift out of
 sync with the real algorithm.
 
+See `examples/quickstart_demo.ipynb` for a runnable, visual walkthrough of
+every example above plus a target-visibility calendar, a breakdown of how
+much each constraint (windows/moon/altitude) removes on its own, and two
+bonus diagnostics (altitude-threshold sensitivity, greedy vs. random phase
+coverage). Needs `pip install rvcadence[astro] matplotlib` to run.
+
 ## Development
 
 ```bash
