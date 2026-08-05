@@ -140,7 +140,10 @@ def evaluate_candidate(
         phase_r_t = (t % p_rot_d) / p_rot_d
         d_r = min_phase_separation(phase_r_t, phases_r)
 
-    d_t = min_time_separation(t, selected) / baseline_days
+    # Separations longer than the season carry no extra information: an epoch
+    # far outside the planning window imposes no clustering penalty anywhere
+    # in it. min_time_separation is non-negative, so only the upper bound bites.
+    d_t = min(min_time_separation(t, selected) / baseline_days, 1.0)
 
     w_p, w_r, w_t = _validate_weights(weights, has_rotation)
     score = w_p * d_p + w_r * d_r + w_t * d_t
@@ -184,30 +187,45 @@ def build_schedule(
     baseline_days: int,
     weights: Sequence[float] | None = None,
     planet_weights: Sequence[float] | None = None,
+    existing_offsets: Sequence[int] | None = None,
 ) -> list[int]:
     """
-    Greedily select n_obs day offsets from allowed_offsets to maximise phase
-    coverage of the planet period(s) (and stellar rotation if known) while
-    keeping observations temporally spread. Returns a sorted list of integer
-    day offsets.
+    Greedily select day offsets to maximise phase coverage of the planet
+    period(s) (and stellar rotation if known) while keeping observations
+    temporally spread. Returns a sorted list of integer day offsets.
+
+    `existing_offsets` are already-observed epochs. They are fixed for the
+    whole run: they seed the greedy, they are never removed or re-scored, and
+    they are excluded from the candidate pool. Only `n_obs - len(existing)`
+    further offsets are chosen. Locked offsets outside `allowed_offsets` stay
+    locked — constraints filter future candidates and cannot retroactively
+    un-observe an epoch.
     """
     _coerce_periods(periods_d)  # validate eagerly, even if n_obs<=1 short-circuits below
 
-    if n_obs <= 0:
-        return []
+    locked = sorted(set(int(x) for x in existing_offsets)) if existing_offsets else []
+    if n_obs - len(locked) <= 0:
+        return locked
 
-    candidates = sorted(set(int(x) for x in allowed_offsets))
+    candidates = sorted(set(int(x) for x in allowed_offsets) - set(locked))
     if not candidates:
         raise ValueError("No candidate dates are available in provided observability windows.")
-    if n_obs == 1:
-        return [candidates[0]]
-    if len(candidates) == 1:
-        raise ValueError("Only one feasible candidate date exists but N_obs > 1.")
 
-    selected = [candidates[0], candidates[-1]]
+    if locked:
+        selected = list(locked)
+    else:
+        if n_obs == 1:
+            return [candidates[0]]
+        if len(candidates) == 1:
+            raise ValueError("Only one feasible candidate date exists but N_obs > 1.")
+        selected = [candidates[0], candidates[-1]]
+
     while len(selected) < n_obs:
         selected.sort()
-        best = best_candidate(candidates, selected, periods_d, p_rot_d, baseline_days, weights=weights, planet_weights=planet_weights)
+        best = best_candidate(
+            candidates, selected, periods_d, p_rot_d, baseline_days,
+            weights=weights, planet_weights=planet_weights,
+        )
         selected.append(best.t)
 
     selected.sort()

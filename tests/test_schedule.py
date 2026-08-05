@@ -484,3 +484,110 @@ def test_plan_calendar_planet_weights_none_matches_v0_2_output():
         season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
     )
     assert result.dates == [date(2026, 1, 1), date(2026, 1, 3), date(2026, 1, 21)]
+
+
+def test_d_t_is_clipped_at_one_for_distant_epochs():
+    result = evaluate_candidate(
+        t=5, selected=[-400], periods_d=10.0, p_rot_d=math.nan, baseline_days=20,
+    )
+    assert result.d_t == 1.0
+
+
+def test_d_t_clip_does_not_change_in_range_values():
+    result = evaluate_candidate(
+        t=5, selected=[0, 20], periods_d=10.0, p_rot_d=math.nan, baseline_days=20,
+    )
+    assert result.d_t == 0.25
+
+
+def test_build_schedule_locks_existing_offsets():
+    schedule = build_schedule(
+        n_obs=5, periods_d=10.0, p_rot_d=math.nan,
+        allowed_offsets=list(range(41)), baseline_days=40,
+        existing_offsets=[3, 17],
+    )
+    assert 3 in schedule and 17 in schedule
+    assert len(schedule) == 5
+    assert schedule == sorted(schedule)
+
+
+def test_build_schedule_never_reselects_a_locked_offset():
+    schedule = build_schedule(
+        n_obs=6, periods_d=10.0, p_rot_d=math.nan,
+        allowed_offsets=list(range(41)), baseline_days=40,
+        existing_offsets=[3, 17],
+    )
+    assert len(set(schedule)) == len(schedule)
+
+
+def test_build_schedule_locks_offsets_outside_the_allowed_pool():
+    schedule = build_schedule(
+        n_obs=4, periods_d=10.0, p_rot_d=math.nan,
+        allowed_offsets=list(range(20, 41)), baseline_days=40,
+        existing_offsets=[-5, 2],
+    )
+    assert -5 in schedule and 2 in schedule
+    assert len(schedule) == 4
+
+
+def test_best_candidate_min_gap_screens_candidates_near_a_locked_offset():
+    # build_schedule always uses min_gap_days=1, which cannot bind: candidates
+    # are distinct integers not already selected, so `abs(t - s) < 1` is never
+    # true. Exercise the screen through best_candidate's own min_gap_days, on a
+    # fixture where it changes the answer: with a locked epoch at 5 the best
+    # candidate is 3, but a 3-day gap rules out 3, 4, 6 and 7 and the winner
+    # becomes 2.
+    pool = [1, 2, 3, 4, 6, 7, 8, 9]
+    kwargs = dict(
+        selected=[5], periods_d=4.0, p_rot_d=math.nan, baseline_days=10,
+    )
+    assert best_candidate(pool, min_gap_days=1, **kwargs).t == 3
+    assert best_candidate(pool, min_gap_days=3, **kwargs).t == 2
+
+
+def test_best_candidate_raises_when_min_gap_leaves_nothing():
+    with pytest.raises(RuntimeError, match="Could not find feasible"):
+        best_candidate(
+            [3, 4, 5, 6, 7], selected=[5], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=10, min_gap_days=3,
+        )
+
+
+def test_build_schedule_new_offsets_are_distinct_from_locked():
+    schedule = build_schedule(
+        n_obs=4, periods_d=10.0, p_rot_d=math.nan,
+        allowed_offsets=list(range(41)), baseline_days=40,
+        existing_offsets=[10, 11],
+    )
+    assert schedule.count(10) == 1 and schedule.count(11) == 1
+    assert len(set(schedule)) == len(schedule)
+
+
+def test_build_schedule_returns_only_locked_when_budget_is_exhausted():
+    schedule = build_schedule(
+        n_obs=2, periods_d=10.0, p_rot_d=math.nan,
+        allowed_offsets=list(range(41)), baseline_days=40,
+        existing_offsets=[3, 17, 29],
+    )
+    assert schedule == [3, 17, 29]
+
+
+def test_build_schedule_existing_offsets_none_matches_v0_2():
+    assert build_schedule(
+        n_obs=3, periods_d=10.0, p_rot_d=math.nan,
+        allowed_offsets=list(range(21)), baseline_days=20,
+        existing_offsets=None,
+    ) == [0, 5, 20]
+
+
+def test_single_remaining_epoch_is_not_pinned_to_season_end():
+    # One locked epoch at offset 0 and one slot left. Offsets 5 and 15 both sit
+    # at phase 0.5 for a 10 d period, so the spread term decides between them
+    # and picks 15 -- the last night of the season, offset 20, is at phase 0
+    # and is not chosen.
+    schedule = build_schedule(
+        n_obs=2, periods_d=10.0, p_rot_d=math.nan,
+        allowed_offsets=list(range(21)), baseline_days=20,
+        existing_offsets=[0],
+    )
+    assert schedule == [0, 15]
