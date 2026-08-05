@@ -664,21 +664,38 @@ def test_plan_calendar_locked_epochs_before_the_season_are_kept():
 
 
 def test_plan_calendar_gap_stats_ignore_epochs_outside_the_season():
-    # A locked epoch outside the season is still excluded from the
-    # median/mean gap: they are recomputed here from the returned
-    # in-season offsets directly, rather than compared across two
-    # independent plan_calendar() calls, because a locked epoch also
-    # changes which in-season dates the greedy loop goes on to pick.
-    season_start = date(2026, 1, 1)
+    # A locked epoch outside the season is itself excluded from the
+    # median/mean gap. It still changes which in-season dates the greedy
+    # loop goes on to pick (a locked offset makes build_schedule seed from
+    # the locked set rather than from the two candidate extremes), so this
+    # is pinned to the actual dates returned rather than compared against a
+    # separate plan_calendar() call with no locked epoch.
     result = plan_calendar(
         n_obs=4, periods_d=10.0,
-        season_start=season_start, season_end=date(2026, 2, 10),
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
         existing_times=[date(2025, 6, 1)],
     )
-    in_season_offsets = sorted((d - season_start).days for d in result.new_dates)
-    expected_median, expected_mean = spacing_stats(in_season_offsets)
-    assert result.median_gap_d == expected_median
-    assert result.mean_gap_d == expected_mean
+    assert result.locked_dates == [date(2025, 6, 1)]
+    assert result.new_dates == [date(2026, 1, 2), date(2026, 1, 24), date(2026, 2, 9)]
+    # In-season offsets from season_start (2026-01-01): 1, 23, 39 -> gaps 22, 16.
+    assert result.median_gap_d == 19.0
+    assert result.mean_gap_d == 19.0
+
+
+def test_plan_calendar_gap_stats_include_in_season_locked_epochs():
+    # An in-season locked epoch is part of the season's cadence and must be
+    # included in the gap statistics alongside the newly scheduled dates,
+    # not excluded the way an out-of-season locked epoch is (previous test).
+    result = plan_calendar(
+        n_obs=4, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+        existing_times=[date(2026, 1, 4)],
+    )
+    assert result.locked_dates == [date(2026, 1, 4)]
+    assert result.new_dates == [date(2026, 1, 21), date(2026, 1, 27), date(2026, 2, 8)]
+    # All offsets from season_start: 3, 20, 26, 38 -> gaps 17, 6, 12.
+    assert result.median_gap_d == 12.0
+    assert result.mean_gap_d == pytest.approx(35 / 3)
 
 
 def test_plan_calendar_duplicate_nights_collapse():

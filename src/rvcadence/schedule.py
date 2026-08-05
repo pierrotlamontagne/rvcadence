@@ -353,7 +353,7 @@ def plan_calendar(
     offsets = build_schedule(
         n_obs, periods_d, p_rot, allowed, baseline_days,
         weights=weights, planet_weights=planet_weights,
-        existing_offsets=existing_offsets or None,
+        existing_offsets=existing_offsets,
     )
 
     locked = set(existing_offsets)
