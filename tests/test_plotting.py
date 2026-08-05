@@ -257,9 +257,16 @@ def test_plot_altitude_sensitivity_is_non_increasing():
         n_obs=3, periods_d=9.53,
         season_start=date(2026, 1, 1), season_end=date(2026, 1, 15),
     )
+    # This target transits at ~82deg from this site, so thresholds below that
+    # exclude nothing; 85 sits past culmination and drops the count to 0,
+    # giving the monotonicity check a threshold it can actually fail on.
     ax = plot_altitude_sensitivity(
-        short, target_coord=target, observer_location=site, thresholds=[0, 30, 60],
+        short, target_coord=target, observer_location=site, thresholds=[0, 60, 85],
     )
     counts = list(ax.lines[0].get_ydata())
     assert all(b <= a for a, b in zip(counts, counts[1:]))
+    # A pure non-increasing check passes trivially on a constant sequence, so
+    # on its own it can't tell "the cut has no effect" from "the cut works" --
+    # require an actual drop across the range to make that distinguishable.
+    assert counts[-1] < counts[0]
     assert ax.get_xlabel() == "min_altitude_deg"
