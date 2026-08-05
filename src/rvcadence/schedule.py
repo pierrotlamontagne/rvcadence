@@ -32,12 +32,73 @@ def _coerce_periods(periods_d: float | Sequence[float]) -> list[float]:
     return periods
 
 
+_DEFAULT_WEIGHTS_ROTATION = (0.55, 0.30, 0.15)
+_DEFAULT_WEIGHTS_NO_ROTATION = (0.80, 0.20)
+
+
+def _validate_weights(
+    weights: Sequence[float] | None, has_rotation: bool
+) -> tuple[float, float, float]:
+    """
+    Resolve the score weights to a (w_planet, w_rotation, w_time) triple. The
+    rotation entry is 0.0 when no rotation period is known, in which case
+    `weights` is a 2-element (w_planet, w_time) sequence.
+    """
+    if weights is None:
+        if has_rotation:
+            return _DEFAULT_WEIGHTS_ROTATION
+        w_p, w_t = _DEFAULT_WEIGHTS_NO_ROTATION
+        return (w_p, 0.0, w_t)
+
+    w = [float(x) for x in weights]
+    expected = 3 if has_rotation else 2
+    if len(w) != expected:
+        names = "(w_planet, w_rotation, w_time)" if has_rotation else "(w_planet, w_time)"
+        state = "is given" if has_rotation else "is absent"
+        raise ValueError(
+            f"weights must have {expected} entries {names} when the rotation period "
+            f"{state}, got {len(w)}"
+        )
+    # NaN must be rejected explicitly: every comparison against it is False,
+    # so the sign and sum checks below would both pass it through, and a NaN
+    # score then loses every `>` comparison in best_candidate.
+    if any(math.isnan(x) for x in w):
+        raise ValueError(f"weights must be finite, got {w}")
+    if any(x < 0 for x in w):
+        raise ValueError(f"weights must be non-negative, got {w}")
+    if abs(sum(w) - 1.0) > 1e-6:
+        raise ValueError(f"weights must sum to 1, got {sum(w)}")
+    return (w[0], w[1], w[2]) if has_rotation else (w[0], 0.0, w[1])
+
+
+def _validate_planet_weights(
+    planet_weights: Sequence[float] | None, n_periods: int
+) -> list[float] | None:
+    """Validated per-planet priority weights, or None for worst-case (min) aggregation."""
+    if planet_weights is None:
+        return None
+    w = [float(x) for x in planet_weights]
+    if len(w) != n_periods:
+        raise ValueError(
+            f"planet_weights must have one entry per period ({n_periods}), got {len(w)}"
+        )
+    if any(math.isnan(x) for x in w):
+        raise ValueError(f"planet_weights must be finite, got {w}")
+    if any(x < 0 for x in w):
+        raise ValueError(f"planet_weights must be non-negative, got {w}")
+    if abs(sum(w) - 1.0) > 1e-6:
+        raise ValueError(f"planet_weights must sum to 1, got {sum(w)}")
+    return w
+
+
 def evaluate_candidate(
     t: int,
     selected: list[int],
     periods_d: float | Sequence[float],
     p_rot_d: float,
     baseline_days: int,
+    weights: Sequence[float] | None = None,
+    planet_weights: Sequence[float] | None = None,
 ) -> CandidateScore:
     """
     Score one candidate day offset `t` against the currently `selected` days:
@@ -49,16 +110,28 @@ def evaluate_candidate(
     planet-phase term is the worst-case (min) phase distance across all of
     them, not an average — a candidate only scores well if it improves
     coverage for whichever planet is currently least-covered.
+
+    `weights` overrides the default score weights. With a rotation period it
+    is (w_planet, w_rotation, w_time); without one it is (w_planet, w_time).
+    Entries must be non-negative and sum to 1. Defaults are (0.55, 0.30, 0.15)
+    and (0.80, 0.20) respectively.
+
+    `planet_weights` switches the planet-phase term from worst-case (min)
+    aggregation to a priority-weighted mean over the periods. Entries must be
+    non-negative and sum to 1, one per period. The weighted mean of values in
+    [0, 0.5] stays in [0, 0.5], so it remains comparable to the rotation term.
+    A high-weight, well-covered planet can mask a low-weight, poorly-covered
+    one; that is the guarantee traded away by opting in.
     """
     if baseline_days <= 0:
         raise ValueError(f"baseline_days must be positive, got {baseline_days}")
     periods = _coerce_periods(periods_d)
-    d_p = min(
-        min_phase_separation(
-            (t % p) / p, [(x % p) / p for x in selected]
-        )
+    d_p_each = [
+        min_phase_separation((t % p) / p, [(x % p) / p for x in selected])
         for p in periods
-    )
+    ]
+    pw = _validate_planet_weights(planet_weights, len(periods))
+    d_p = min(d_p_each) if pw is None else sum(w * d for w, d in zip(pw, d_p_each))
 
     has_rotation = not math.isnan(p_rot_d) and p_rot_d > 0
     d_r = 0.0
@@ -69,10 +142,8 @@ def evaluate_candidate(
 
     d_t = min_time_separation(t, selected) / baseline_days
 
-    if has_rotation:
-        score = 0.55 * d_p + 0.30 * d_r + 0.15 * d_t
-    else:
-        score = 0.80 * d_p + 0.20 * d_t
+    w_p, w_r, w_t = _validate_weights(weights, has_rotation)
+    score = w_p * d_p + w_r * d_r + w_t * d_t
 
     return CandidateScore(t=t, d_p=d_p, d_r=d_r, d_t=d_t, score=score)
 
@@ -84,6 +155,8 @@ def best_candidate(
     p_rot_d: float,
     baseline_days: int,
     min_gap_days: int = 1,
+    weights: Sequence[float] | None = None,
+    planet_weights: Sequence[float] | None = None,
 ) -> CandidateScore:
     """Highest-scoring feasible candidate not already selected or too close to one that is."""
     best: CandidateScore | None = None
@@ -92,7 +165,7 @@ def best_candidate(
             continue
         if any(abs(t - s) < min_gap_days for s in selected):
             continue
-        score = evaluate_candidate(t, selected, periods_d, p_rot_d, baseline_days)
+        score = evaluate_candidate(t, selected, periods_d, p_rot_d, baseline_days, weights=weights, planet_weights=planet_weights)
         if best is None or score.score > best.score:
             best = score
     if best is None:
@@ -109,6 +182,8 @@ def build_schedule(
     p_rot_d: float,
     allowed_offsets: list[int],
     baseline_days: int,
+    weights: Sequence[float] | None = None,
+    planet_weights: Sequence[float] | None = None,
 ) -> list[int]:
     """
     Greedily select n_obs day offsets from allowed_offsets to maximise phase
@@ -132,7 +207,7 @@ def build_schedule(
     selected = [candidates[0], candidates[-1]]
     while len(selected) < n_obs:
         selected.sort()
-        best = best_candidate(candidates, selected, periods_d, p_rot_d, baseline_days)
+        best = best_candidate(candidates, selected, periods_d, p_rot_d, baseline_days, weights=weights, planet_weights=planet_weights)
         selected.append(best.t)
 
     selected.sort()
@@ -166,6 +241,8 @@ def plan_calendar(
     min_moon_sep_deg: float | None = 30.0,
     min_altitude_deg: float | None = None,
     twilight_sun_alt_deg: float = -18.0,
+    weights: Sequence[float] | None = None,
+    planet_weights: Sequence[float] | None = None,
 ) -> ScheduleResult:
     """
     High-level entry point: plan an observing calendar directly in real dates.
@@ -226,7 +303,7 @@ def plan_calendar(
             allowed = [o for o in allowed if o in vis_allowed]
 
     p_rot = rotation_period_d if rotation_period_d is not None else math.nan
-    offsets = build_schedule(n_obs, periods_d, p_rot, allowed, baseline_days)
+    offsets = build_schedule(n_obs, periods_d, p_rot, allowed, baseline_days, weights=weights, planet_weights=planet_weights)
 
     dates = [season_start + timedelta(days=o) for o in offsets]
     median_gap, mean_gap = spacing_stats(offsets)

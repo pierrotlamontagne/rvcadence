@@ -310,3 +310,177 @@ def test_plan_calendar_min_moon_sep_deg_none_skips_moon_check():
         min_moon_sep_deg=None,
     )
     assert season_start in result.dates
+
+
+def test_evaluate_candidate_custom_weights_no_rotation():
+    result = evaluate_candidate(
+        t=5, selected=[0, 20], periods_d=10.0, p_rot_d=math.nan,
+        baseline_days=20, weights=(0.5, 0.5),
+    )
+    assert result.score == 0.5 * result.d_p + 0.5 * result.d_t
+
+
+def test_evaluate_candidate_custom_weights_with_rotation():
+    result = evaluate_candidate(
+        t=5, selected=[0], periods_d=10.0, p_rot_d=4.0,
+        baseline_days=20, weights=(0.6, 0.3, 0.1),
+    )
+    assert result.score == 0.6 * result.d_p + 0.3 * result.d_r + 0.1 * result.d_t
+
+
+def test_evaluate_candidate_weights_none_reproduces_defaults():
+    a = evaluate_candidate(t=5, selected=[0], periods_d=10.0, p_rot_d=4.0, baseline_days=20)
+    b = evaluate_candidate(
+        t=5, selected=[0], periods_d=10.0, p_rot_d=4.0,
+        baseline_days=20, weights=(0.55, 0.30, 0.15),
+    )
+    assert a.score == b.score
+
+
+def test_evaluate_candidate_weights_wrong_length_with_rotation_raises():
+    with pytest.raises(ValueError, match="weights must have 3 entries"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=4.0,
+            baseline_days=20, weights=(0.8, 0.2),
+        )
+
+
+def test_evaluate_candidate_weights_wrong_length_without_rotation_raises():
+    with pytest.raises(ValueError, match="weights must have 2 entries"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(0.55, 0.30, 0.15),
+        )
+
+
+def test_evaluate_candidate_weights_negative_raises():
+    with pytest.raises(ValueError, match="weights must be non-negative"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(1.2, -0.2),
+        )
+
+
+def test_evaluate_candidate_weights_do_not_sum_to_one_raises():
+    with pytest.raises(ValueError, match="weights must sum to 1"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(0.7, 0.2),
+        )
+
+
+def test_evaluate_candidate_nan_weight_raises():
+    # Every comparison against NaN is False, so a NaN slips past both the sign
+    # and the sum check unless it is rejected on its own.
+    with pytest.raises(ValueError, match="weights must be finite"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(math.nan, 0.2),
+        )
+
+
+def test_plan_calendar_weights_change_the_schedule():
+    kwargs = dict(
+        n_obs=4, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+        rotation_period_d=3.0,
+    )
+    default = plan_calendar(**kwargs)
+    time_only = plan_calendar(**kwargs, weights=(0.0, 0.0, 1.0))
+    # default picks 2026-01-05 and 2026-01-08; pure temporal spread picks
+    # 2026-01-06 and 2026-01-11.
+    assert default.dates != time_only.dates
+
+
+def test_planet_weights_none_keeps_worst_case_min():
+    # Same fixture as test_evaluate_candidate_multi_planet_uses_worst_case_min.
+    result = evaluate_candidate(
+        t=2, selected=[0], periods_d=[4.0, 100.0], p_rot_d=math.nan, baseline_days=100,
+    )
+    assert result.d_p == min(0.5, 0.02)
+
+
+def test_planet_weights_uses_weighted_mean():
+    result = evaluate_candidate(
+        t=2, selected=[0], periods_d=[4.0, 100.0], p_rot_d=math.nan,
+        baseline_days=100, planet_weights=[0.25, 0.75],
+    )
+    assert result.d_p == pytest.approx(0.25 * 0.5 + 0.75 * 0.02)
+
+
+def test_planet_weights_stay_within_zero_and_half():
+    result = evaluate_candidate(
+        t=2, selected=[0], periods_d=[4.0, 100.0], p_rot_d=math.nan,
+        baseline_days=100, planet_weights=[0.5, 0.5],
+    )
+    assert 0.0 <= result.d_p <= 0.5
+
+
+def test_planet_weights_wrong_length_raises():
+    with pytest.raises(ValueError, match="planet_weights must have one entry per period"):
+        evaluate_candidate(
+            t=2, selected=[0], periods_d=[4.0, 100.0], p_rot_d=math.nan,
+            baseline_days=100, planet_weights=[1.0],
+        )
+
+
+def test_planet_weights_negative_raises():
+    with pytest.raises(ValueError, match="planet_weights must be non-negative"):
+        evaluate_candidate(
+            t=2, selected=[0], periods_d=[4.0, 100.0], p_rot_d=math.nan,
+            baseline_days=100, planet_weights=[1.2, -0.2],
+        )
+
+
+def test_planet_weights_do_not_sum_to_one_raises():
+    with pytest.raises(ValueError, match="planet_weights must sum to 1"):
+        evaluate_candidate(
+            t=2, selected=[0], periods_d=[4.0, 100.0], p_rot_d=math.nan,
+            baseline_days=100, planet_weights=[0.5, 0.2],
+        )
+
+
+def test_planet_weights_nan_raises():
+    with pytest.raises(ValueError, match="planet_weights must be finite"):
+        evaluate_candidate(
+            t=2, selected=[0], periods_d=[4.0, 100.0], p_rot_d=math.nan,
+            baseline_days=100, planet_weights=[math.nan, 0.5],
+        )
+
+
+def test_planet_weights_do_not_affect_rotation_term():
+    kwargs = dict(
+        t=7, selected=[0, 3], periods_d=[4.0, 11.0], p_rot_d=9.0, baseline_days=40,
+    )
+    a = evaluate_candidate(**kwargs)
+    b = evaluate_candidate(**kwargs, planet_weights=[0.9, 0.1])
+    assert a.d_r == b.d_r
+
+
+def _largest_phase_gap(dates, ref, period_d):
+    phases = sorted(((d - ref).days % period_d) / period_d for d in dates)
+    gaps = [b - a for a, b in zip(phases, phases[1:])]
+    gaps.append(1.0 - phases[-1] + phases[0])
+    return max(gaps)
+
+
+def test_planet_weights_prioritise_the_favoured_planet():
+    ref = date(2026, 1, 1)
+    kwargs = dict(
+        n_obs=12, periods_d=[7.3, 23.1],
+        season_start=ref, season_end=date(2026, 7, 1),
+    )
+    first = plan_calendar(**kwargs, planet_weights=[0.9, 0.1])
+    second = plan_calendar(**kwargs, planet_weights=[0.1, 0.9])
+
+    assert _largest_phase_gap(first.dates, ref, 7.3) < _largest_phase_gap(second.dates, ref, 7.3)
+    assert _largest_phase_gap(second.dates, ref, 23.1) < _largest_phase_gap(first.dates, ref, 23.1)
+
+
+def test_plan_calendar_planet_weights_none_matches_v0_2_output():
+    # The 0.2.0 multi-planet schedule, pinned so the opt-in default cannot drift.
+    result = plan_calendar(
+        n_obs=3, periods_d=[4.0, 5.0],
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+    )
+    assert result.dates == [date(2026, 1, 1), date(2026, 1, 3), date(2026, 1, 21)]
