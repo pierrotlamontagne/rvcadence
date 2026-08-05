@@ -225,6 +225,11 @@ def plot_coverage_vs_n(result: ScheduleResult, *, ax=None, allowed_offsets=None,
     Largest phase gap per planet as a function of how many epochs are
     scheduled -- the "how many observations do I actually need" curve. Each
     point re-runs the greedy from scratch on the same night pool.
+
+    If `result` was built with window, moon, or visibility constraints, pass
+    the same pool as `allowed_offsets` -- `ScheduleResult` does not store it,
+    so without it the default pool is the full season and the curve's last
+    point may not match the actual schedule's largest phase gap.
     """
     ax = _new_ax(ax, (6.5, 3.4))
     baseline_days = (result.season_end - result.season_start).days
