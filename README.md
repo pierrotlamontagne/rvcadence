@@ -128,6 +128,40 @@ score = 0.55 · d_planet_phase + 0.30 · d_rotation_phase + 0.15 · d_time_sprea
 score = 0.80 · d_planet_phase + 0.20 · d_time_spread                             (rotation period unknown)
 ```
 
+### Tuning the score
+
+Both the outer weights and the multi-planet aggregation are adjustable.
+
+```python
+result = plan_calendar(
+    n_obs=20,
+    periods_d=[9.53, 21.7],
+    season_start=date(2026, 5, 1),
+    season_end=date(2027, 4, 30),
+    rotation_period_d=12.45,
+    weights=(0.70, 0.20, 0.10),   # (planet, rotation, time); (planet, time) without a rotation period
+    planet_weights=[0.75, 0.25],  # prioritise the first planet's phase coverage
+)
+```
+
+`weights` must be non-negative and sum to 1, with three entries when
+`rotation_period_d` is given and two when it is not. It is never silently
+renormalised — a vector that does not sum to 1 raises `ValueError`.
+
+`planet_weights` changes how the planet-phase term aggregates across periods:
+
+| `planet_weights` | aggregation |
+|------------------|-------------|
+| `None` (default) | `d_planet_phase = min` over the periods — worst-case |
+| a sequence summing to 1 | `d_planet_phase = ` priority-weighted mean over the periods |
+
+**Opting into `planet_weights` trades the worst-case guarantee away.** The
+default `min` aggregation exists precisely so that one well-covered planet
+cannot mask a poorly-covered one. Under a weighted mean it can: a high-weight
+planet with good coverage will pull the score up even while a low-weight
+planet's phase coverage stays poor. Use it when you genuinely have a priority
+ordering among the planets, not as a default flavour.
+
 See `examples/explainer/` for the full animated walkthrough (manim source +
 rendered mp4) — the example imports its scoring logic directly from this
 package (see `tests/test_explainer_example.py`), so it can't drift out of
