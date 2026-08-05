@@ -216,3 +216,50 @@ def test_coverage_vs_n_honours_locked_epochs():
     offsets = [(d - mid.season_start).days for d in mid.dates]
     for line, period in zip(ax.lines, mid.periods_d):
         assert line.get_ydata()[-1] == pytest.approx(max_phase_gap(offsets, period))
+
+
+def _paranal_and_sirius():
+    pytest.importorskip("astropy")
+    import astropy.units as u
+    from astropy.coordinates import EarthLocation, SkyCoord
+
+    site = EarthLocation(lat=-24.6272 * u.deg, lon=-70.4039 * u.deg, height=2635 * u.m)
+    target = SkyCoord(ra=101.28715533 * u.deg, dec=-16.71611586 * u.deg)
+    return site, target
+
+
+def test_plot_staralt_returns_a_heatmap():
+    from rvcadence.plotting import plot_staralt
+
+    site, target = _paranal_and_sirius()
+    short = plan_calendar(
+        n_obs=3, periods_d=9.53,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 15),
+    )
+    ax = plot_staralt(short, target_coord=target, observer_location=site)
+    assert len(ax.images) == 1
+    assert ax.images[0].get_array().shape[0] == 15
+
+
+def test_plot_staralt_requires_a_target_and_site(result):
+    from rvcadence.plotting import plot_staralt
+
+    pytest.importorskip("astropy")
+    with pytest.raises(ValueError, match="target_coord and observer_location are required"):
+        plot_staralt(result)
+
+
+def test_plot_altitude_sensitivity_is_non_increasing():
+    from rvcadence.plotting import plot_altitude_sensitivity
+
+    site, target = _paranal_and_sirius()
+    short = plan_calendar(
+        n_obs=3, periods_d=9.53,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 15),
+    )
+    ax = plot_altitude_sensitivity(
+        short, target_coord=target, observer_location=site, thresholds=[0, 30, 60],
+    )
+    counts = list(ax.lines[0].get_ydata())
+    assert all(b <= a for a, b in zip(counts, counts[1:]))
+    assert ax.get_xlabel() == "min_altitude_deg"

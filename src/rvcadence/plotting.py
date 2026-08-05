@@ -262,3 +262,105 @@ def plot_coverage_vs_n(result: ScheduleResult, *, ax=None, allowed_offsets=None,
     ax.set_ylabel("largest phase gap")
     ax.legend(fontsize=8)
     return ax
+
+
+def plot_staralt(
+    result: ScheduleResult,
+    *,
+    ax=None,
+    target_coord=None,
+    observer_location=None,
+    min_altitude_deg=30.0,
+    min_moon_sep_deg=30.0,
+    twilight_sun_alt_deg=-18.0,
+):
+    """
+    Airmass as a function of night and time-of-night, masked to the moments
+    that are dark, above `min_altitude_deg`, and clear of the Moon. Needs
+    `pip install rvcadence[astro]`.
+    """
+    if target_coord is None or observer_location is None:
+        raise ValueError("target_coord and observer_location are required for plot_staralt")
+
+    import warnings
+
+    import astropy.units as u
+    from astropy.coordinates import AltAz, get_sun
+    from astropy.coordinates.errors import NonRotationTransformationWarning
+
+    from .moon import _local_midnight_utc, is_moon_polluted
+
+    ax = _new_ax(ax, (9, 4.2))
+    offsets = _season_offsets(result)
+    nights = [result.season_start + timedelta(days=k) for k in offsets]
+    minutes = np.linspace(-12 * 60, 12 * 60, 2 * 12 * 60 // 15 + 1)
+
+    alt = np.full((len(nights), len(minutes)), np.nan)
+    dark = np.zeros_like(alt, dtype=bool)
+    moon_ok = np.zeros(len(nights), dtype=bool)
+
+    with warnings.catch_warnings():
+        # Moon-to-target separations mix a time-dependent frame with ICRS,
+        # which astropy warns is not a pure rotation. Accuracy here is far
+        # finer than the separation threshold.
+        warnings.simplefilter("ignore", NonRotationTransformationWarning)
+        for i, night in enumerate(nights):
+            times = _local_midnight_utc(night, observer_location) + minutes * u.minute
+            frame = AltAz(obstime=times, location=observer_location)
+            alt[i] = target_coord.transform_to(frame).alt.deg
+            dark[i] = get_sun(times).transform_to(frame).alt.deg <= twilight_sun_alt_deg
+            moon_ok[i] = min_moon_sep_deg is None or not is_moon_polluted(
+                night, target_coord, observer_location, min_sep_deg=min_moon_sep_deg
+            )
+
+    observable = dark & moon_ok[:, None] & (alt >= min_altitude_deg)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        airmass = np.where(observable, 1.0 / np.sin(np.radians(alt)), np.nan)
+
+    image = ax.imshow(
+        airmass, aspect="auto", origin="lower", cmap="viridis_r",
+        extent=[minutes[0] / 60, minutes[-1] / 60, 0, len(nights)],
+    )
+    ax.figure.colorbar(image, ax=ax, label="airmass")
+    ax.set_xlabel("hours from local midnight")
+    ax.set_ylabel(f"nights since {result.season_start.isoformat()}")
+    return ax
+
+
+def plot_altitude_sensitivity(
+    result: ScheduleResult,
+    *,
+    ax=None,
+    target_coord=None,
+    observer_location=None,
+    thresholds=None,
+    marker_at=30.0,
+):
+    """
+    Number of visible nights in the season as a function of the altitude cut,
+    to see what a given threshold costs. Needs `pip install rvcadence[astro]`.
+    """
+    if target_coord is None or observer_location is None:
+        raise ValueError(
+            "target_coord and observer_location are required for plot_altitude_sensitivity"
+        )
+    from .visibility import visibility_allowed_offsets
+
+    ax = _new_ax(ax, (6, 3.0))
+    thresholds = list(thresholds) if thresholds is not None else list(range(0, 61, 5))
+    counts = [
+        len(
+            visibility_allowed_offsets(
+                result.season_start, result.season_end, target_coord, observer_location,
+                min_altitude_deg=float(thr),
+            )
+        )
+        for thr in thresholds
+    ]
+    ax.plot(thresholds, counts, marker="o", color=_NEW_COLOR)
+    if marker_at is not None:
+        ax.axvline(marker_at, color="#d62828", ls="--", lw=1, label=f"{marker_at:g}°")
+        ax.legend(fontsize=8)
+    ax.set_xlabel("min_altitude_deg")
+    ax.set_ylabel("visible nights / season")
+    return ax
