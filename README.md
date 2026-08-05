@@ -65,6 +65,47 @@ result = plan_calendar(
 )
 ```
 
+### Already-observed epochs
+
+Mid-campaign, pass the epochs you have already taken. They are locked in
+place, excluded from the candidate pool, and only `n_obs - len(existing)`
+further dates are chosen — so you get an updated calendar for what remains,
+phased against what you already have.
+
+```python
+result = plan_calendar(
+    n_obs=20,                       # total for the programme, not the remainder
+    periods_d=9.53,
+    season_start=date(2026, 5, 1),
+    season_end=date(2027, 4, 30),
+    existing_times=["2026-05-03", "2026-05-19", "2026-06-02"],
+)
+print(result.n_remaining)     # 17
+print(result.locked_dates)    # the three epochs above
+print(result.new_dates)       # the 17 newly scheduled dates
+print(result.dates)           # sorted union of both
+```
+
+`existing_times` accepts a sequence of `datetime.date`/`datetime`, ISO-8601
+strings, or JD/MJD floats; an `astropy.time.Time`; an `astropy.table.Column`;
+or an `astropy.table.Table` whose time column is picked automatically from
+`time`/`bjd`/`jd`/`mjd`/`date` (case-insensitive), or named with
+`time_column=`.
+
+Bare floats above 2.4e6 are read as JD, at or below it as MJD.
+**RJD (`JD - 2400000.0`) must declare itself with `time_format="rjd"`.** MJD
+and RJD are numerically indistinguishable — in 2026 both are near 61000 and
+they differ by only 0.5 d — so no magnitude test can tell them apart. Read as
+MJD, an RJD number reconstructs a JD half a day later than the true epoch, so
+the observation can be placed on the following day. `time_format="jd"` and
+`"mjd"` are available for the same reason.
+
+Epochs before `season_start` are fine: they stay locked and keep the schedule
+phased against them, and `median_gap_d`/`mean_gap_d` are reported over the
+epochs inside `[season_start, season_end]` so they always describe the
+cadence across the season you are planning. Multiple observations on the same
+night collapse to one epoch — a night is the scheduler's unit.
+
 ### Composable constraints
 
 `windows` text, lunar avoidance, and astropy-computed visibility are
