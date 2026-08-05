@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from statistics import median
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from ._phase import min_phase_separation, min_time_separation
+from .times import to_day_offsets
 from .windows import build_allowed_offsets, parse_obs_windows
 
 if TYPE_CHECKING:
@@ -242,9 +243,22 @@ def spacing_stats(times: list[int]) -> tuple[float, float]:
 
 @dataclass
 class ScheduleResult:
+    """
+    A planned calendar. `dates` is the sorted union of `locked_dates`
+    (already observed, fixed) and `new_dates` (newly scheduled).
+
+    `median_gap_d` and `mean_gap_d` are computed over the epochs falling
+    within [season_start, season_end] only, so they always describe the
+    cadence across the season being planned rather than the gap between an
+    archive and the current season.
+    """
+
     dates: list[date]
     median_gap_d: float
     mean_gap_d: float
+    locked_dates: list[date] = field(default_factory=list)
+    new_dates: list[date] = field(default_factory=list)
+    n_remaining: int = 0
 
 
 def plan_calendar(
@@ -261,6 +275,9 @@ def plan_calendar(
     twilight_sun_alt_deg: float = -18.0,
     weights: Sequence[float] | None = None,
     planet_weights: Sequence[float] | None = None,
+    existing_times: Any = None,
+    time_format: str | None = None,
+    time_column: str | None = None,
 ) -> ScheduleResult:
     """
     High-level entry point: plan an observing calendar directly in real dates.
@@ -282,6 +299,12 @@ def plan_calendar(
         min_altitude_deg is None, the default — there is no universally
         correct altitude threshold).
     All supplied constraint types (windows / moon / visibility) intersect.
+
+    `existing_times` are epochs already observed. They are locked in place and
+    only `n_obs - len(existing)` further dates are chosen. Accepts dates,
+    ISO-8601 strings, JD/MJD floats, an astropy Time/Column/Table; see
+    rvcadence.times.to_day_offsets for the format rules. RJD input must pass
+    time_format="rjd" — MJD and RJD are numerically indistinguishable.
     """
     baseline_days = (season_end - season_start).days
     parsed_windows = parse_obs_windows(windows) if isinstance(windows, str) else windows
@@ -321,8 +344,39 @@ def plan_calendar(
             allowed = [o for o in allowed if o in vis_allowed]
 
     p_rot = rotation_period_d if rotation_period_d is not None else math.nan
-    offsets = build_schedule(n_obs, periods_d, p_rot, allowed, baseline_days, weights=weights, planet_weights=planet_weights)
 
+    existing_offsets = (
+        to_day_offsets(existing_times, season_start, time_format, time_column)
+        if existing_times is not None
+        else []
+    )
+    offsets = build_schedule(
+        n_obs, periods_d, p_rot, allowed, baseline_days,
+        weights=weights, planet_weights=planet_weights,
+        existing_offsets=existing_offsets or None,
+    )
+
+    locked = set(existing_offsets)
     dates = [season_start + timedelta(days=o) for o in offsets]
-    median_gap, mean_gap = spacing_stats(offsets)
-    return ScheduleResult(dates=dates, median_gap_d=median_gap, mean_gap_d=mean_gap)
+    locked_dates = [season_start + timedelta(days=o) for o in offsets if o in locked]
+    new_dates = [season_start + timedelta(days=o) for o in offsets if o not in locked]
+
+    if len(offsets) > n_obs:
+        import warnings
+
+        warnings.warn(
+            f"{len(locked)} epochs were already observed but n_obs is {n_obs}; "
+            f"returning the {len(offsets)} locked epochs and scheduling none",
+            stacklevel=2,
+        )
+
+    in_season = [o for o in offsets if 0 <= o <= baseline_days]
+    median_gap, mean_gap = spacing_stats(in_season)
+    return ScheduleResult(
+        dates=dates,
+        median_gap_d=median_gap,
+        mean_gap_d=mean_gap,
+        locked_dates=locked_dates,
+        new_dates=new_dates,
+        n_remaining=max(0, n_obs - len(locked)),
+    )

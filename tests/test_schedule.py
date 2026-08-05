@@ -591,3 +591,111 @@ def test_single_remaining_epoch_is_not_pinned_to_season_end():
         existing_offsets=[0],
     )
     assert schedule == [0, 15]
+
+
+def test_plan_calendar_existing_times_splits_locked_and_new():
+    result = plan_calendar(
+        n_obs=5, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+        existing_times=[date(2026, 1, 4), date(2026, 1, 18)],
+    )
+    assert result.locked_dates == [date(2026, 1, 4), date(2026, 1, 18)]
+    assert len(result.new_dates) == 3
+    assert result.n_remaining == 3
+    assert result.dates == sorted(result.locked_dates + result.new_dates)
+    assert not set(result.locked_dates) & set(result.new_dates)
+
+
+def test_plan_calendar_existing_times_from_mjd_floats():
+    # MJD 61041.0 is 2026-01-01, 61051.0 is 2026-01-11.
+    result = plan_calendar(
+        n_obs=4, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+        existing_times=[61041.0, 61051.0],
+    )
+    assert result.locked_dates == [date(2026, 1, 1), date(2026, 1, 11)]
+
+
+def test_plan_calendar_existing_times_none_matches_v0_2():
+    result = plan_calendar(
+        n_obs=3, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+    )
+    assert result.dates == [date(2026, 1, 1), date(2026, 1, 6), date(2026, 1, 21)]
+    assert result.locked_dates == []
+    assert result.new_dates == result.dates
+    assert result.n_remaining == 3
+    assert result.median_gap_d == 10.0
+    assert result.mean_gap_d == 10.0
+
+
+def test_plan_calendar_budget_exhausted_returns_locked_only_and_warns():
+    # More observed than requested: the extra epochs are kept, not discarded,
+    # but len(dates) > n_obs is surprising enough to warn about.
+    with pytest.warns(UserWarning, match="already observed"):
+        result = plan_calendar(
+            n_obs=2, periods_d=10.0,
+            season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+            existing_times=[date(2026, 1, 4), date(2026, 1, 18), date(2026, 1, 25)],
+        )
+    assert result.new_dates == []
+    assert result.n_remaining == 0
+    assert len(result.locked_dates) == 3
+
+
+def test_plan_calendar_does_not_warn_when_within_budget(recwarn):
+    plan_calendar(
+        n_obs=5, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+        existing_times=[date(2026, 1, 4), date(2026, 1, 18)],
+    )
+    assert not [w for w in recwarn if "already observed" in str(w.message)]
+
+
+def test_plan_calendar_locked_epochs_before_the_season_are_kept():
+    result = plan_calendar(
+        n_obs=4, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+        existing_times=[date(2025, 6, 1)],
+    )
+    assert result.locked_dates == [date(2025, 6, 1)]
+    assert len(result.new_dates) == 3
+    assert all(d >= date(2026, 1, 1) for d in result.new_dates)
+
+
+def test_plan_calendar_gap_stats_ignore_epochs_outside_the_season():
+    # A locked epoch outside the season is still excluded from the
+    # median/mean gap: they are recomputed here from the returned
+    # in-season offsets directly, rather than compared across two
+    # independent plan_calendar() calls, because a locked epoch also
+    # changes which in-season dates the greedy loop goes on to pick.
+    season_start = date(2026, 1, 1)
+    result = plan_calendar(
+        n_obs=4, periods_d=10.0,
+        season_start=season_start, season_end=date(2026, 2, 10),
+        existing_times=[date(2025, 6, 1)],
+    )
+    in_season_offsets = sorted((d - season_start).days for d in result.new_dates)
+    expected_median, expected_mean = spacing_stats(in_season_offsets)
+    assert result.median_gap_d == expected_median
+    assert result.mean_gap_d == expected_mean
+
+
+def test_plan_calendar_duplicate_nights_collapse():
+    result = plan_calendar(
+        n_obs=4, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+        existing_times=[date(2026, 1, 4), date(2026, 1, 4)],
+    )
+    assert result.locked_dates == [date(2026, 1, 4)]
+    assert len(result.new_dates) == 3
+
+
+def test_plan_calendar_rjd_existing_times():
+    # RJD 61041.5 is 2026-01-01T00:00:00 UTC.
+    result = plan_calendar(
+        n_obs=3, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 10),
+        existing_times=[61041.5], time_format="rjd",
+    )
+    assert result.locked_dates == [date(2026, 1, 1)]
