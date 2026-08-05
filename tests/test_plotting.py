@@ -118,3 +118,83 @@ def test_plot_greedy_vs_random_is_reproducible(result):
     # no get_height().
     assert list(a.containers[0].datavalues) == list(b.containers[0].datavalues)
     assert a.get_xlabel() == "orbital phase"
+
+
+def test_plot_phase_vs_rotation_phase_axes_are_phases(result):
+    from rvcadence.plotting import plot_phase_vs_rotation_phase
+
+    ax = plot_phase_vs_rotation_phase(result)
+    assert ax.get_xlim() == (0.0, 1.0)
+    assert ax.get_ylim() == (0.0, 1.0)
+    assert "rotation phase" in ax.get_ylabel()
+
+
+def test_plot_phase_vs_rotation_phase_requires_a_rotation_period():
+    from rvcadence.plotting import plot_phase_vs_rotation_phase
+
+    no_rotation = plan_calendar(
+        n_obs=5, periods_d=9.53, season_start=SEASON_START, season_end=SEASON_END,
+    )
+    with pytest.raises(ValueError, match="needs a rotation period"):
+        plot_phase_vs_rotation_phase(no_rotation)
+
+
+def test_plot_coverage_vs_n_one_line_per_planet(result):
+    from rvcadence.plotting import plot_coverage_vs_n
+
+    ax = plot_coverage_vs_n(result)
+    assert len(ax.lines) == len(result.periods_d)
+    assert ax.get_ylabel() == "largest phase gap"
+
+
+def test_coverage_vs_n_is_monotonically_non_increasing(result):
+    from rvcadence.plotting import plot_coverage_vs_n
+
+    ax = plot_coverage_vs_n(result, n_values=range(2, 13))
+    for line in ax.lines:
+        gaps = list(line.get_ydata())
+        assert all(b <= a + 1e-12 for a, b in zip(gaps, gaps[1:])), gaps
+
+
+def test_coverage_vs_n_ends_at_the_actual_schedule(result):
+    # The last point on the curve must be the largest phase gap of the schedule
+    # the result actually holds -- the curve re-runs the same optimization.
+    from rvcadence._phase import max_phase_gap
+    from rvcadence.plotting import plot_coverage_vs_n
+
+    ax = plot_coverage_vs_n(result)
+    offsets = [(d - result.season_start).days for d in result.dates]
+    for line, period in zip(ax.lines, result.periods_d):
+        assert line.get_ydata()[-1] == pytest.approx(max_phase_gap(offsets, period))
+
+
+def test_coverage_vs_n_honours_custom_weights():
+    # Built with planet_weights heavily favouring the second planet: the curve
+    # must reflect that optimization, not the default worst-case one.
+    from rvcadence._phase import max_phase_gap
+    from rvcadence.plotting import plot_coverage_vs_n
+
+    tuned = plan_calendar(
+        n_obs=10, periods_d=[9.53, 21.7],
+        season_start=SEASON_START, season_end=SEASON_END,
+        planet_weights=[0.05, 0.95],
+    )
+    ax = plot_coverage_vs_n(tuned)
+    offsets = [(d - tuned.season_start).days for d in tuned.dates]
+    for line, period in zip(ax.lines, tuned.periods_d):
+        assert line.get_ydata()[-1] == pytest.approx(max_phase_gap(offsets, period))
+
+
+def test_coverage_vs_n_honours_locked_epochs():
+    from rvcadence._phase import max_phase_gap
+    from rvcadence.plotting import plot_coverage_vs_n
+
+    mid = plan_calendar(
+        n_obs=10, periods_d=[9.53, 21.7],
+        season_start=SEASON_START, season_end=SEASON_END,
+        existing_times=[date(2026, 1, 3), date(2026, 1, 20), date(2026, 2, 8)],
+    )
+    ax = plot_coverage_vs_n(mid)
+    offsets = [(d - mid.season_start).days for d in mid.dates]
+    for line, period in zip(ax.lines, mid.periods_d):
+        assert line.get_ydata()[-1] == pytest.approx(max_phase_gap(offsets, period))

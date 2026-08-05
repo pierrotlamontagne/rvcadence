@@ -185,3 +185,73 @@ def plot_greedy_vs_random(
     ax.set_ylabel("count")
     ax.legend(fontsize=8)
     return ax
+
+
+def plot_phase_vs_rotation_phase(result: ScheduleResult, *, ax=None, period_d=None):
+    """
+    Orbital phase against stellar-rotation phase for the scheduled epochs.
+    Points falling along a line mean the cadence aliases the planet signal onto
+    the activity signal, so the two will be hard to separate in the RV fit.
+    """
+    if result.rotation_period_d is None:
+        raise ValueError("plot_phase_vs_rotation_phase needs a rotation period on the result")
+    ax = _new_ax(ax, (4.4, 4.4))
+    p = period_d if period_d is not None else result.periods_d[0]
+    p_rot = result.rotation_period_d
+    locked, new = _split_dates(result)
+    for dates, color, label in (
+        (locked, _LOCKED_COLOR, _LOCKED_LABEL),
+        (new, _NEW_COLOR, _NEW_LABEL),
+    ):
+        if not dates:
+            continue
+        offs = _offsets(dates, result.season_start)
+        ax.scatter(
+            [(o % p) / p for o in offs], [(o % p_rot) / p_rot for o in offs],
+            s=45, color=color, zorder=3, label=label,
+        )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel(f"orbital phase (P = {p:g} d)")
+    ax.set_ylabel(f"rotation phase (P_rot = {p_rot:g} d)")
+    ax.legend(fontsize=8)
+    return ax
+
+
+def plot_coverage_vs_n(result: ScheduleResult, *, ax=None, allowed_offsets=None, n_values=None):
+    """
+    Largest phase gap per planet as a function of how many epochs are
+    scheduled -- the "how many observations do I actually need" curve. Each
+    point re-runs the greedy from scratch on the same night pool.
+    """
+    ax = _new_ax(ax, (6.5, 3.4))
+    baseline_days = (result.season_end - result.season_start).days
+    pool = sorted(allowed_offsets) if allowed_offsets is not None else _season_offsets(result)
+    p_rot = result.rotation_period_d if result.rotation_period_d is not None else math.nan
+    locked = _offsets(result.locked_dates, result.season_start) or None
+
+    if n_values is None:
+        # Below the number of locked epochs there is nothing left to schedule,
+        # so the curve starts where the greedy actually has a choice.
+        first = max(2, len(result.locked_dates))
+        n_values = list(range(first, len(result.dates) + 1))
+    else:
+        n_values = list(n_values)
+
+    # Re-runs the same optimization that produced this result -- same weights,
+    # same locked epochs -- so the curve describes the schedule beside it.
+    schedules = {
+        n: build_schedule(
+            n, result.periods_d, p_rot, pool, baseline_days,
+            weights=result.weights, planet_weights=result.planet_weights,
+            existing_offsets=locked,
+        )
+        for n in n_values
+    }
+    for p, color in zip(result.periods_d, _PLANET_COLORS):
+        gaps = [max_phase_gap(schedules[n], p) for n in n_values]
+        ax.plot(n_values, gaps, marker="o", color=color, label=f"P = {p:g} d")
+    ax.set_xlabel("number of scheduled epochs")
+    ax.set_ylabel("largest phase gap")
+    ax.legend(fontsize=8)
+    return ax
