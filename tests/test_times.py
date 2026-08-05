@@ -69,3 +69,83 @@ def test_scalar_input_raises():
 
 def test_empty_input():
     assert to_day_offsets([], SEASON_START) == []
+
+
+def _astropy():
+    return pytest.importorskip("astropy")
+
+
+def test_astropy_time_is_read_as_jd_regardless_of_time_format():
+    _astropy()
+    from astropy.time import Time
+
+    t = Time(["2026-05-01T00:00:00", "2026-05-11T00:00:00"], scale="utc")
+    assert to_day_offsets(t, SEASON_START) == [0, 10]
+    assert to_day_offsets(t, SEASON_START, time_format="mjd") == [0, 10]
+
+
+def test_astropy_column_of_floats():
+    _astropy()
+    from astropy.table import Column
+
+    assert to_day_offsets(Column([61161.0, 61171.0], name="mjd"), SEASON_START) == [0, 10]
+
+
+def test_astropy_table_column_autodetected():
+    _astropy()
+    from astropy.table import Table
+
+    t = Table({"bjd": [2461161.5, 2461171.5], "rv": [1.0, 2.0]})
+    assert to_day_offsets(t, SEASON_START) == [0, 10]
+
+
+def test_astropy_table_column_autodetection_is_case_insensitive():
+    _astropy()
+    from astropy.table import Table
+
+    t = Table({"BJD": [2461161.5], "rv": [1.0]})
+    assert to_day_offsets(t, SEASON_START) == [0]
+
+
+def test_astropy_table_with_no_time_column_raises():
+    _astropy()
+    from astropy.table import Table
+
+    t = Table({"rv": [1.0], "sigma": [0.1]})
+    with pytest.raises(ValueError, match="no time column found"):
+        to_day_offsets(t, SEASON_START)
+
+
+def test_astropy_table_with_ambiguous_time_columns_raises():
+    _astropy()
+    from astropy.table import Table
+
+    t = Table({"bjd": [2461161.5], "mjd": [61161.0]})
+    with pytest.raises(ValueError, match="several candidate time columns"):
+        to_day_offsets(t, SEASON_START)
+
+
+def test_astropy_table_time_column_override():
+    _astropy()
+    from astropy.table import Table
+
+    t = Table({"bjd": [2461161.5], "mjd": [61161.0]})
+    assert to_day_offsets(t, SEASON_START, time_column="mjd", time_format="mjd") == [0]
+
+
+def test_astropy_table_unknown_time_column_raises():
+    _astropy()
+    from astropy.table import Table
+
+    t = Table({"bjd": [2461161.5]})
+    with pytest.raises(ValueError, match="is not in the table columns"):
+        to_day_offsets(t, SEASON_START, time_column="epoch")
+
+
+def test_astropy_table_holding_a_time_mixin_column():
+    _astropy()
+    from astropy.table import Table
+    from astropy.time import Time
+
+    t = Table({"time": Time(["2026-05-01T00:00:00", "2026-05-11T00:00:00"], scale="utc")})
+    assert to_day_offsets(t, SEASON_START) == [0, 10]
