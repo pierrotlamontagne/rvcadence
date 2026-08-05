@@ -123,7 +123,9 @@ def plot_night_availability(result: ScheduleResult, *, ax=None, allowed_offsets=
     ):
         if not dates:
             continue
-        idx = _offsets(dates, result.season_start)
+        idx = [o for o in _offsets(dates, result.season_start) if 0 <= o < n_days]
+        if not idx:
+            continue
         ax.scatter(
             idx, [0.5] * len(idx), marker=marker, s=140, color=color,
             edgecolor="white", linewidth=0.6, zorder=3, label=label,

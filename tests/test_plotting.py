@@ -93,6 +93,22 @@ def test_plot_night_availability_defaults_to_the_whole_season(result):
     assert ax.images[0].get_array().shape[1] == (SEASON_END - SEASON_START).days + 1
 
 
+def test_plot_night_availability_ignores_pre_season_locked_epochs():
+    from rvcadence.plotting import plot_night_availability
+
+    pre_season = plan_calendar(
+        n_obs=8, periods_d=[9.53, 21.7],
+        season_start=SEASON_START, season_end=SEASON_END,
+        rotation_period_d=12.45,
+        existing_times=[date(2025, 11, 1), date(2026, 1, 20)],
+    )
+    ax = plot_night_availability(pre_season)
+    xmin, _ = ax.get_xlim()
+    assert xmin >= 0
+    labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert "already observed" in labels
+
+
 def test_plot_constraint_breakdown_one_bar_per_entry(result):
     from rvcadence.plotting import plot_constraint_breakdown
 
@@ -113,10 +129,12 @@ def test_plot_greedy_vs_random_is_reproducible(result):
 
     a = plot_greedy_vs_random(result, seed=7)
     b = plot_greedy_vs_random(result, seed=7)
-    # Read the bin counts off the BarContainer. ax.patches holds the filled
-    # histogram's Rectangles *and* the stepped histogram's Polygon, which has
-    # no get_height().
-    assert list(a.containers[0].datavalues) == list(b.containers[0].datavalues)
+    c = plot_greedy_vs_random(result, seed=8)
+    # The greedy histogram is seed-independent, so containers[0].datavalues
+    # cannot exercise the RNG. ax.patches[-1] is the stepped random
+    # histogram's Polygon -- the vertices that actually move with the seed.
+    assert a.patches[-1].get_xy().tolist() == b.patches[-1].get_xy().tolist()
+    assert a.patches[-1].get_xy().tolist() != c.patches[-1].get_xy().tolist()
     assert a.get_xlabel() == "orbital phase"
 
 
