@@ -270,3 +270,33 @@ def test_plot_altitude_sensitivity_is_non_increasing():
     # require an actual drop across the range to make that distinguishable.
     assert counts[-1] < counts[0]
     assert ax.get_xlabel() == "min_altitude_deg"
+
+
+def test_plot_summary_returns_four_axes(result):
+    import matplotlib.pyplot as plt
+    from rvcadence.plotting import plot_summary
+
+    axes = plot_summary(result)
+    assert len(axes) == 4
+    assert all(isinstance(a, matplotlib.axes.Axes) for a in axes)
+    plt.close(axes[0].figure)
+
+
+def test_plot_summary_draws_into_supplied_axes(result):
+    import matplotlib.pyplot as plt
+    from rvcadence.plotting import plot_summary
+
+    fig, given = plt.subplots(2, 2)
+    axes = plot_summary(result, axes=given)
+    assert {a.figure for a in axes} == {fig}
+    plt.close(fig)
+
+
+def test_plot_summary_marks_locked_epochs(result_with_locked):
+    import matplotlib.pyplot as plt
+    from rvcadence.plotting import plot_summary
+
+    axes = plot_summary(result_with_locked)
+    labels = [t.get_text() for a in axes if a.get_legend() for t in a.get_legend().get_texts()]
+    assert "already observed" in labels
+    plt.close(axes[0].figure)

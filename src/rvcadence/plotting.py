@@ -364,3 +364,19 @@ def plot_altitude_sensitivity(
     ax.set_xlabel("min_altitude_deg")
     ax.set_ylabel("visible nights / season")
     return ax
+
+
+def plot_summary(result: ScheduleResult, *, axes=None, allowed_offsets=None, windows=None):
+    """
+    Four-panel overview: timeline, night availability, phase coverage, and
+    largest phase gap versus number of epochs. Returns the four Axes.
+    """
+    if axes is None:
+        figure, axes = plt.subplots(2, 2, figsize=(12, 7))
+        figure.tight_layout(pad=2.5)
+    axes = np.asarray(axes).reshape(-1)
+    plot_timeline(result, ax=axes[0], windows=windows)
+    plot_night_availability(result, ax=axes[1], allowed_offsets=allowed_offsets)
+    plot_phase_coverage(result, ax=axes[2])
+    plot_coverage_vs_n(result, ax=axes[3], allowed_offsets=allowed_offsets)
+    return axes
