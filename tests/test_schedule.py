@@ -716,3 +716,51 @@ def test_plan_calendar_rjd_existing_times():
         existing_times=[61041.5], time_format="rjd",
     )
     assert result.locked_dates == [date(2026, 1, 1)]
+
+
+def test_schedule_result_records_its_own_inputs():
+    result = plan_calendar(
+        n_obs=3, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+        rotation_period_d=4.0,
+    )
+    assert result.season_start == date(2026, 1, 1)
+    assert result.season_end == date(2026, 1, 21)
+    assert result.periods_d == [10.0]
+    assert result.rotation_period_d == 4.0
+
+
+def test_schedule_result_periods_normalised_to_a_list():
+    result = plan_calendar(
+        n_obs=3, periods_d=[10.0, 21.0],
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+    )
+    assert result.periods_d == [10.0, 21.0]
+
+
+def test_schedule_result_rotation_period_is_none_not_nan():
+    result = plan_calendar(
+        n_obs=3, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+    )
+    assert result.rotation_period_d is None
+
+
+def test_schedule_result_records_the_weights_used():
+    result = plan_calendar(
+        n_obs=4, periods_d=[10.0, 21.0],
+        season_start=date(2026, 1, 1), season_end=date(2026, 2, 21),
+        rotation_period_d=4.0,
+        weights=(0.6, 0.3, 0.1), planet_weights=[0.75, 0.25],
+    )
+    assert result.weights == (0.6, 0.3, 0.1)
+    assert result.planet_weights == [0.75, 0.25]
+
+
+def test_schedule_result_weights_are_none_when_defaulted():
+    result = plan_calendar(
+        n_obs=3, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+    )
+    assert result.weights is None
+    assert result.planet_weights is None
