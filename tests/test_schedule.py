@@ -310,3 +310,83 @@ def test_plan_calendar_min_moon_sep_deg_none_skips_moon_check():
         min_moon_sep_deg=None,
     )
     assert season_start in result.dates
+
+
+def test_evaluate_candidate_custom_weights_no_rotation():
+    result = evaluate_candidate(
+        t=5, selected=[0, 20], periods_d=10.0, p_rot_d=math.nan,
+        baseline_days=20, weights=(0.5, 0.5),
+    )
+    assert result.score == 0.5 * result.d_p + 0.5 * result.d_t
+
+
+def test_evaluate_candidate_custom_weights_with_rotation():
+    result = evaluate_candidate(
+        t=5, selected=[0], periods_d=10.0, p_rot_d=4.0,
+        baseline_days=20, weights=(0.6, 0.3, 0.1),
+    )
+    assert result.score == 0.6 * result.d_p + 0.3 * result.d_r + 0.1 * result.d_t
+
+
+def test_evaluate_candidate_weights_none_reproduces_defaults():
+    a = evaluate_candidate(t=5, selected=[0], periods_d=10.0, p_rot_d=4.0, baseline_days=20)
+    b = evaluate_candidate(
+        t=5, selected=[0], periods_d=10.0, p_rot_d=4.0,
+        baseline_days=20, weights=(0.55, 0.30, 0.15),
+    )
+    assert a.score == b.score
+
+
+def test_evaluate_candidate_weights_wrong_length_with_rotation_raises():
+    with pytest.raises(ValueError, match="weights must have 3 entries"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=4.0,
+            baseline_days=20, weights=(0.8, 0.2),
+        )
+
+
+def test_evaluate_candidate_weights_wrong_length_without_rotation_raises():
+    with pytest.raises(ValueError, match="weights must have 2 entries"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(0.55, 0.30, 0.15),
+        )
+
+
+def test_evaluate_candidate_weights_negative_raises():
+    with pytest.raises(ValueError, match="weights must be non-negative"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(1.2, -0.2),
+        )
+
+
+def test_evaluate_candidate_weights_do_not_sum_to_one_raises():
+    with pytest.raises(ValueError, match="weights must sum to 1"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(0.7, 0.2),
+        )
+
+
+def test_evaluate_candidate_nan_weight_raises():
+    # Every comparison against NaN is False, so a NaN slips past both the sign
+    # and the sum check unless it is rejected on its own.
+    with pytest.raises(ValueError, match="weights must be finite"):
+        evaluate_candidate(
+            t=5, selected=[0], periods_d=10.0, p_rot_d=math.nan,
+            baseline_days=20, weights=(math.nan, 0.2),
+        )
+
+
+def test_plan_calendar_weights_change_the_schedule():
+    kwargs = dict(
+        n_obs=4, periods_d=10.0,
+        season_start=date(2026, 1, 1), season_end=date(2026, 1, 21),
+        rotation_period_d=3.0,
+    )
+    default = plan_calendar(**kwargs)
+    time_only = plan_calendar(**kwargs, weights=(0.0, 0.0, 1.0))
+    # default picks 2026-01-05 and 2026-01-08; pure temporal spread picks
+    # 2026-01-06 and 2026-01-11.
+    assert default.dates != time_only.dates
