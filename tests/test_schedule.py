@@ -764,3 +764,93 @@ def test_schedule_result_weights_are_none_when_defaulted():
     )
     assert result.weights is None
     assert result.planet_weights is None
+
+
+def test_new_epochs_never_land_before_the_last_observed_one():
+    # An observation cannot be placed in the past: with a locked epoch late in
+    # the season, every new date must follow it even though earlier nights are
+    # free and would score better on phase coverage.
+    result = plan_calendar(
+        n_obs=8, periods_d=9.53,
+        season_start=date(2026, 1, 1), season_end=date(2026, 4, 1),
+        existing_times=[date(2026, 1, 3), date(2026, 2, 20)],
+    )
+    assert min(result.new_dates) > max(result.locked_dates)
+
+
+def test_schedule_from_overrides_the_last_observed_epoch():
+    # Planning resumes later than the last observation, so the gap between them
+    # is unschedulable too and only schedule_from can express that.
+    result = plan_calendar(
+        n_obs=8, periods_d=9.53,
+        season_start=date(2026, 1, 1), season_end=date(2026, 4, 1),
+        existing_times=[date(2026, 1, 3)],
+        schedule_from=date(2026, 3, 1),
+    )
+    assert min(result.new_dates) >= date(2026, 3, 1)
+
+
+def test_schedule_from_applies_without_any_existing_epochs():
+    result = plan_calendar(
+        n_obs=5, periods_d=9.53,
+        season_start=date(2026, 1, 1), season_end=date(2026, 4, 1),
+        schedule_from=date(2026, 2, 15),
+    )
+    assert min(result.dates) >= date(2026, 2, 15)
+
+
+def test_shortfall_is_reported_when_the_pool_runs_out():
+    # Only 2026-03-30/31 and 04-01 survive the cutoff, so 3 of the 6 requested
+    # new epochs cannot be placed.
+    result = plan_calendar(
+        n_obs=7, periods_d=9.53,
+        season_start=date(2026, 1, 1), season_end=date(2026, 4, 1),
+        existing_times=[date(2026, 1, 3)],
+        schedule_from=date(2026, 3, 30),
+    )
+    assert result.n_remaining == 6
+    assert len(result.new_dates) == 3
+    assert result.n_unscheduled == 3
+
+
+def test_no_shortfall_reported_on_a_full_schedule():
+    result = plan_calendar(
+        n_obs=5, periods_d=9.53,
+        season_start=date(2026, 1, 1), season_end=date(2026, 4, 1),
+    )
+    assert result.n_unscheduled == 0
+    assert len(result.new_dates) == 5
+
+
+def test_schedules_are_physically_realisable():
+    # Sweeps the invariants that make a calendar something an observer could
+    # actually execute, over randomised seasons/pools/locked sets. The
+    # ordering check alone fails on 216/300 of these without the past cutoff.
+    import random
+
+    rng = random.Random(0)
+    checked = 0
+    for _ in range(300):
+        span = rng.randint(40, 400)
+        n_obs = rng.randint(2, 25)
+        periods = [round(rng.uniform(1.5, 60), 2) for _ in range(rng.randint(1, 3))]
+        pool = sorted(rng.sample(range(span + 1), k=rng.randint(max(4, n_obs), span + 1)))
+        n_lock = rng.randint(0, min(n_obs - 1, 6))
+        locked = sorted(rng.sample(pool, k=n_lock)) if n_lock else []
+        try:
+            offsets = build_schedule(
+                n_obs, periods, math.nan, pool, span, existing_offsets=locked
+            )
+        except (ValueError, RuntimeError):
+            continue
+        checked += 1
+        new = [o for o in offsets if o not in set(locked)]
+        assert offsets == sorted(offsets)
+        assert len(offsets) == len(set(offsets))
+        assert len(offsets) <= n_obs
+        assert set(locked) <= set(offsets)              # never un-observes an epoch
+        assert all(o in set(pool) for o in new)         # never leaves the allowed pool
+        assert all(0 <= o <= span for o in new)         # never leaves the season
+        if locked and new:
+            assert min(new) > max(locked)               # never schedules the past
+    assert checked > 200, f"only {checked} configurations were schedulable"

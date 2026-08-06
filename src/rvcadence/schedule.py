@@ -197,6 +197,7 @@ def build_schedule(
     weights: Sequence[float] | None = None,
     planet_weights: Sequence[float] | None = None,
     existing_offsets: Sequence[int] | None = None,
+    schedule_from_offset: int | None = None,
 ) -> list[int]:
     """
     Greedily select day offsets to maximise phase coverage of the planet
@@ -209,6 +210,16 @@ def build_schedule(
     further offsets are chosen. Locked offsets outside `allowed_offsets` stay
     locked — constraints filter future candidates and cannot retroactively
     un-observe an epoch.
+
+    `schedule_from_offset` is the earliest offset a new epoch may occupy: an
+    observation cannot be placed in the past. It defaults to the day after the
+    last already-observed epoch, and is ignored when nothing is locked. Pass it
+    explicitly when planning starts later than the last observation — a gap
+    since the last epoch is invisible to the default.
+
+    Fewer than `n_obs - len(existing)` offsets are returned when the allowed
+    pool runs out; the caller reports the shortfall rather than the greedy
+    failing.
     """
     _coerce_periods(periods_d)  # validate eagerly, even if n_obs<=1 short-circuits below
 
@@ -216,8 +227,16 @@ def build_schedule(
     if n_obs - len(locked) <= 0:
         return locked
 
+    first_allowed = schedule_from_offset
+    if first_allowed is None and locked:
+        first_allowed = locked[-1] + 1
+
     candidates = sorted(set(int(x) for x in allowed_offsets) - set(locked))
+    if first_allowed is not None:
+        candidates = [o for o in candidates if o >= first_allowed]
     if not candidates:
+        if locked:
+            return locked
         raise ValueError("No candidate dates are available in provided observability windows.")
 
     if locked:
@@ -229,7 +248,9 @@ def build_schedule(
             raise ValueError("Only one feasible candidate date exists but N_obs > 1.")
         selected = [candidates[0], candidates[-1]]
 
-    while len(selected) < n_obs:
+    # The pool can be smaller than the request; place what fits.
+    target = min(n_obs, len(locked) + len(candidates))
+    while len(selected) < target:
         selected.sort()
         best = best_candidate(
             candidates, selected, periods_d, p_rot_d, baseline_days,
@@ -255,6 +276,10 @@ class ScheduleResult:
     A planned calendar. `dates` is the sorted union of `locked_dates`
     (already observed, fixed) and `new_dates` (newly scheduled).
 
+    `n_remaining` is how many new epochs were asked for; `n_unscheduled` is
+    how many of those the allowed pool could not fit, so `len(new_dates)` is
+    `n_remaining - n_unscheduled`.
+
     `median_gap_d` and `mean_gap_d` are computed over the epochs falling
     within [season_start, season_end] only, so they always describe the
     cadence across the season being planned rather than the gap between an
@@ -279,6 +304,7 @@ class ScheduleResult:
     rotation_period_d: float | None = None
     weights: tuple[float, ...] | None = None
     planet_weights: list[float] | None = None
+    n_unscheduled: int = 0
 
 
 def plan_calendar(
@@ -298,6 +324,7 @@ def plan_calendar(
     existing_times: Any = None,
     time_format: str | None = None,
     time_column: str | None = None,
+    schedule_from: date | None = None,
 ) -> ScheduleResult:
     """
     High-level entry point: plan an observing calendar directly in real dates.
@@ -325,6 +352,13 @@ def plan_calendar(
     ISO-8601 strings, JD/MJD floats, an astropy Time/Column/Table; see
     rvcadence.times.to_day_offsets for the format rules. RJD input must pass
     time_format="rjd" — MJD and RJD are numerically indistinguishable.
+
+    New epochs are never placed in the past: with `existing_times` given, they
+    start the day after the last one. Pass `schedule_from` when planning
+    happens later than the last observation — a gap since then is invisible to
+    that default. If the pool cannot fit every requested epoch, the schedule is
+    as full as it can be and `ScheduleResult.n_unscheduled` reports the
+    shortfall.
     """
     baseline_days = (season_end - season_start).days
     parsed_windows = parse_obs_windows(windows) if isinstance(windows, str) else windows
@@ -374,6 +408,9 @@ def plan_calendar(
         n_obs, periods_d, p_rot, allowed, baseline_days,
         weights=weights, planet_weights=planet_weights,
         existing_offsets=existing_offsets,
+        schedule_from_offset=(
+            (schedule_from - season_start).days if schedule_from is not None else None
+        ),
     )
 
     locked = set(existing_offsets)
@@ -400,6 +437,7 @@ def plan_calendar(
         locked_dates=locked_dates,
         new_dates=new_dates,
         n_remaining=max(0, n_obs - len(locked)),
+        n_unscheduled=max(0, n_obs - len(locked)) - len(new_dates),
         season_start=season_start,
         season_end=season_end,
         periods_d=periods,

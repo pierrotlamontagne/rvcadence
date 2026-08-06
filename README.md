@@ -72,7 +72,8 @@ result = plan_calendar(
 Mid-campaign, pass the epochs you have already taken. They are locked in
 place, excluded from the candidate pool, and only `n_obs - len(existing)`
 further dates are chosen — so you get an updated calendar for what remains,
-phased against what you already have.
+phased against what you already have. New dates always fall after the last
+epoch you have observed: an observation cannot be scheduled in the past.
 
 ```python
 result = plan_calendar(
@@ -101,6 +102,28 @@ they differ by only 0.5 d — so no magnitude test can tell them apart. Read as
 MJD, an RJD number reconstructs a JD half a day later than the true epoch, so
 the observation can be placed on the following day. `time_format="jd"` and
 `"mjd"` are available for the same reason.
+
+The cutoff defaults to the day after your last observation, which is only
+right if you are planning as soon as that observation was taken. When there is
+a gap — you observed through May and it is now August — say so, because no
+locked epoch can tell the scheduler that June and July are also gone:
+
+```python
+result = plan_calendar(
+    n_obs=20,
+    periods_d=9.53,
+    season_start=date(2026, 5, 1),
+    season_end=date(2027, 4, 30),
+    existing_times=["2026-05-03", "2026-05-19"],
+    schedule_from=date(2026, 8, 1),   # planning resumes here, not after 05-19
+)
+print(result.n_unscheduled)   # epochs that no longer fit before season_end
+```
+
+`schedule_from` works with or without `existing_times`. If the surviving
+nights cannot fit every requested epoch, the calendar is as full as it can be
+and `n_unscheduled` reports the shortfall rather than raising — an
+over-subscribed programme is a fact to report, not an error.
 
 Epochs before `season_start` are fine: they stay locked and keep the schedule
 phased against them, and `median_gap_d`/`mean_gap_d` are reported over the

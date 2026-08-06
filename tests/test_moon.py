@@ -54,3 +54,34 @@ def test_is_moon_polluted_rejects_out_of_range_min_sep_deg():
         is_moon_polluted(night, moon_coord, PARANAL, min_sep_deg=200.0)
     with pytest.raises(ValueError, match=r"min_sep_deg must be within \[0, 180\]"):
         is_moon_polluted(night, moon_coord, PARANAL, min_sep_deg=-5.0)
+
+
+def test_separation_is_measured_in_the_observers_frame():
+    # The Moon is near enough that the two transformation directions answer
+    # different questions: the apparent on-sky angle from the telescope, vs an
+    # angle measured as if from infinity. Here they differ by ~83 degrees, so
+    # swapping the operands would silently change which nights are rejected.
+    night = date(2026, 6, 15)
+    target = SkyCoord(ra=123.45 * u.deg, dec=-12.3 * u.deg)
+    moon = moon_coord_at_midnight(night, PARANAL)
+
+    import warnings
+
+    apparent = moon.separation(target.transform_to(moon.frame)).deg
+    with warnings.catch_warnings():  # the reversed call is the point of the test
+        warnings.simplefilter("ignore")
+        reversed_direction = target.separation(moon).deg
+    assert abs(apparent - reversed_direction) > 10.0
+
+    # is_moon_polluted must follow the apparent angle, not the reversed one.
+    threshold = 0.5 * (apparent + reversed_direction)
+    assert is_moon_polluted(night, target, PARANAL, min_sep_deg=threshold) is True
+
+
+def test_moon_check_emits_no_astropy_frame_warning():
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        is_moon_polluted(date(2026, 6, 15), SkyCoord(ra=123.45 * u.deg, dec=-12.3 * u.deg), PARANAL)
+    assert [w for w in caught if "Angular separation" in str(w.message)] == []

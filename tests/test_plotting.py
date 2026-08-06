@@ -304,3 +304,28 @@ def test_plot_summary_marks_locked_epochs(result_with_locked):
     labels = [t.get_text() for a in axes if a.get_legend() for t in a.get_legend().get_texts()]
     assert "already observed" in labels
     plt.close(axes[0].figure)
+
+
+def test_timeline_date_labels_do_not_overlap():
+    # A season-long axis cannot fit an ISO date on every tick; check the
+    # rendered label boxes are actually disjoint rather than trusting the
+    # formatter, across season lengths that select different tick units.
+    import matplotlib.pyplot as plt
+
+    for season_start, season_end in [
+        (date(2026, 1, 1), date(2026, 1, 21)),
+        (date(2026, 1, 1), date(2026, 4, 1)),
+        (date(2026, 5, 1), date(2027, 4, 30)),
+        (date(2026, 1, 1), date(2027, 12, 31)),
+    ]:
+        result = plan_calendar(
+            n_obs=8, periods_d=9.53, season_start=season_start, season_end=season_end
+        )
+        ax = plot_timeline(result)
+        ax.figure.canvas.draw()
+        boxes = [t.get_window_extent() for t in ax.get_xticklabels() if t.get_text()]
+        assert boxes, f"no tick labels for {season_start}..{season_end}"
+        assert all(a.x1 <= b.x0 for a, b in zip(boxes, boxes[1:])), (
+            f"overlapping date labels for {season_start}..{season_end}"
+        )
+        plt.close(ax.figure)
