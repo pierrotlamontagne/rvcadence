@@ -16,10 +16,11 @@ Full-quality version: [`examples/explainer/CadenceGreedyExplainer.mp4`](examples
 ## Install
 
 ```bash
-pip install rvcadence          # core scheduler, zero dependencies
-pip install rvcadence[astro]   # + name/site resolution, visibility, lunar pollution avoidance (astropy)
-pip install rvcadence[plot]    # + ready-made figures (matplotlib)
+pip install rvcadence
 ```
+
+That is the whole install: the scheduler, name/site resolution, visibility and
+lunar-pollution avoidance (astropy), and the ready-made figures (matplotlib).
 
 ## Quickstart
 
@@ -40,7 +41,7 @@ print(f"median gap: {result.median_gap_d} d, mean gap: {result.mean_gap_d} d")
 ```
 
 Or let `rvcadence` compute visibility itself, from a target name and site,
-instead of hand-typing windows (requires `pip install rvcadence[astro]`):
+instead of hand-typing windows:
 
 ```python
 result = plan_calendar(
@@ -210,13 +211,12 @@ package (see `tests/test_explainer_example.py`), so it can't drift out of
 sync with the real algorithm.
 
 See `examples/quickstart_demo.ipynb` for a runnable, visual walkthrough of
-every example above, using `rvcadence.plotting` throughout. Needs
-`pip install rvcadence[astro,plot]` to run.
+every example above, using `rvcadence.plotting` throughout.
 
 ## Plotting
 
 `rvcadence.plotting` turns a `ScheduleResult` into the figures you would
-otherwise hand-code. Install with `pip install rvcadence[plot]`.
+otherwise hand-code.
 
 ```python
 import matplotlib.pyplot as plt
