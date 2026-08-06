@@ -169,7 +169,15 @@ def best_candidate(
             continue
         if any(abs(t - s) < min_gap_days for s in selected):
             continue
-        score = evaluate_candidate(t, selected, periods_d, p_rot_d, baseline_days, weights=weights, planet_weights=planet_weights)
+        score = evaluate_candidate(
+            t,
+            selected,
+            periods_d,
+            p_rot_d,
+            baseline_days,
+            weights=weights,
+            planet_weights=planet_weights,
+        )
         if best is None or score.score > best.score:
             best = score
     if best is None:
@@ -251,6 +259,12 @@ class ScheduleResult:
     within [season_start, season_end] only, so they always describe the
     cadence across the season being planned rather than the gap between an
     archive and the current season.
+
+    The remaining fields record the run's own inputs, so a result can be
+    interpreted without its call site and a diagnostic can re-run the same
+    optimization. `periods_d` is always a list, even when a single float was
+    passed; `rotation_period_d` is None when absent; `weights` and
+    `planet_weights` are None when the defaults were used.
     """
 
     dates: list[date]
@@ -259,6 +273,12 @@ class ScheduleResult:
     locked_dates: list[date] = field(default_factory=list)
     new_dates: list[date] = field(default_factory=list)
     n_remaining: int = 0
+    season_start: date | None = None
+    season_end: date | None = None
+    periods_d: list[float] = field(default_factory=list)
+    rotation_period_d: float | None = None
+    weights: tuple[float, ...] | None = None
+    planet_weights: list[float] | None = None
 
 
 def plan_calendar(
@@ -372,6 +392,7 @@ def plan_calendar(
 
     in_season = [o for o in offsets if 0 <= o <= baseline_days]
     median_gap, mean_gap = spacing_stats(in_season)
+    periods = _coerce_periods(periods_d)
     return ScheduleResult(
         dates=dates,
         median_gap_d=median_gap,
@@ -379,4 +400,10 @@ def plan_calendar(
         locked_dates=locked_dates,
         new_dates=new_dates,
         n_remaining=max(0, n_obs - len(locked)),
+        season_start=season_start,
+        season_end=season_end,
+        periods_d=periods,
+        rotation_period_d=rotation_period_d,
+        weights=tuple(weights) if weights is not None else None,
+        planet_weights=list(planet_weights) if planet_weights is not None else None,
     )

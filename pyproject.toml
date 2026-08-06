@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rvcadence"
-version = "0.2.0"
+version = "0.3.0"
 description = "Greedy observing-calendar scheduler for radial-velocity follow-up campaigns"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -22,7 +22,8 @@ dependencies = []
 [project.optional-dependencies]
 astro = ["astropy>=5.0"]
 examples = ["manim>=0.18"]
-dev = ["pytest>=7.0"]
+plot = ["matplotlib>=3.5", "numpy>=1.20"]
+dev = ["pytest>=7.0", "matplotlib>=3.5", "numpy>=1.20"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rvcadence"]

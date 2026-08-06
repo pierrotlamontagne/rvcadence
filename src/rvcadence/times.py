@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
-from typing import Any, Sequence
+from datetime import date, datetime, timezone
+from typing import Any
 
 _JD_MJD_SPLIT = 2.4e6
 _MJD_OFFSET = 2400000.5
@@ -26,6 +26,8 @@ def to_day_offsets(
     strings, or floats; an `astropy.time.Time`; an `astropy.table.Column`; or
     an `astropy.table.Table` whose time column is auto-selected from
     time/bjd/jd/mjd/date (case-insensitive) unless `time_column` names one.
+    Timezone-aware strings and `datetime` values are converted to UTC before
+    the offset is computed.
 
     Bare floats above 2.4e6 are read as JD, at or below it as MJD.
     `time_format` overrides that heuristic with "jd", "mjd", or "rjd"
@@ -50,12 +52,17 @@ def to_day_offsets(
 def _offset_days(value: Any, season_start: date, time_format: str | None) -> float:
     """Fractional day offset of one epoch from midnight at the start of `season_start`."""
     if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
         midnight = datetime(season_start.year, season_start.month, season_start.day)
         return (value - midnight).total_seconds() / 86400.0
     if isinstance(value, date):
         return float((value - season_start).days)
     if isinstance(value, str):
-        return _offset_days(datetime.fromisoformat(value.strip()), season_start, time_format)
+        stripped = value.strip()
+        if stripped.endswith("Z"):
+            stripped = stripped[:-1] + "+00:00"
+        return _offset_days(datetime.fromisoformat(stripped), season_start, time_format)
     jd_season_start = _JD_UNIX_EPOCH + (season_start - _UNIX_EPOCH_DATE).days
     return _to_jd(value, time_format) - jd_season_start
 

@@ -18,6 +18,7 @@ Full-quality version: [`examples/explainer/CadenceGreedyExplainer.mp4`](examples
 ```bash
 pip install rvcadence          # core scheduler, zero dependencies
 pip install rvcadence[astro]   # + name/site resolution, visibility, lunar pollution avoidance (astropy)
+pip install rvcadence[plot]    # + ready-made figures (matplotlib)
 ```
 
 ## Quickstart
@@ -209,10 +210,42 @@ package (see `tests/test_explainer_example.py`), so it can't drift out of
 sync with the real algorithm.
 
 See `examples/quickstart_demo.ipynb` for a runnable, visual walkthrough of
-every example above plus a target-visibility calendar, a breakdown of how
-much each constraint (windows/moon/altitude) removes on its own, and two
-bonus diagnostics (altitude-threshold sensitivity, greedy vs. random phase
-coverage). Needs `pip install rvcadence[astro] matplotlib` to run.
+every example above, using `rvcadence.plotting` throughout. Needs
+`pip install rvcadence[astro,plot]` to run.
+
+## Plotting
+
+`rvcadence.plotting` turns a `ScheduleResult` into the figures you would
+otherwise hand-code. Install with `pip install rvcadence[plot]`.
+
+```python
+import matplotlib.pyplot as plt
+from rvcadence.plotting import plot_summary, plot_timeline
+
+plot_timeline(result, windows=[(date(2026, 5, 1), date(2026, 5, 19))])
+plt.show()
+
+plot_summary(result)   # timeline, night availability, phase coverage, coverage vs. N
+plt.show()
+```
+
+Every function takes the result first, draws into an `ax=` you supply or
+creates its own figure, and returns the Axes — so they compose into whatever
+layout you want. Already-observed epochs passed via `existing_times` are drawn
+in a separate colour with their own legend entry in every date-bearing figure.
+
+| Function | Shows | Needs |
+|----------|-------|-------|
+| `plot_timeline` | scheduled dates across the season, windows shaded | `[plot]` |
+| `plot_phase_coverage` | orbital phase of each epoch, one row per planet | `[plot]` |
+| `plot_night_availability` | which nights pass the constraints, and which are picked | `[plot]` |
+| `plot_constraint_breakdown` | how many nights each constraint leaves | `[plot]` |
+| `plot_greedy_vs_random` | phase histogram against randomly drawn nights | `[plot]` |
+| `plot_phase_vs_rotation_phase` | whether the cadence aliases planet onto activity | `[plot]` |
+| `plot_coverage_vs_n` | largest phase gap versus number of epochs | `[plot]` |
+| `plot_summary` | four-panel dashboard of the above | `[plot]` |
+| `plot_staralt` | airmass by night and time-of-night | `[plot]`, `[astro]` |
+| `plot_altitude_sensitivity` | visible nights versus the altitude cut | `[plot]`, `[astro]` |
 
 ## Development
 
