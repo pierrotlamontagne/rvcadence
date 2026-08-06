@@ -29,3 +29,9 @@ dev = ["pytest>=7.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rvcadence"]
+
+[tool.hatch.build.targets.sdist]
+# Named explicitly rather than left to the ignore rules: agent/tool scratch
+# directories appear at the repo root over time, and a published sdist is
+# permanent.
+exclude = [".superpowers", ".github", ".gitignore"]
