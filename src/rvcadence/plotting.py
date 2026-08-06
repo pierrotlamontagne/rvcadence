@@ -126,13 +126,17 @@ def plot_night_availability(result: ScheduleResult, *, ax=None, allowed_offsets=
         idx = [o for o in _offsets(dates, result.season_start) if 0 <= o < n_days]
         if not idx:
             continue
+        # Night o spans x in [o, o+1] in the imshow extent below, so the
+        # marker sits at its midpoint rather than straddling the left edge.
+        centers = [o + 0.5 for o in idx]
         ax.scatter(
-            idx, [0.5] * len(idx), marker=marker, s=140, color=color,
+            centers, [0.5] * len(centers), marker=marker, s=140, color=color,
             edgecolor="white", linewidth=0.6, zorder=3, label=label,
         )
     ax.set_yticks([])
     ax.set_xlabel(f"days since {result.season_start.isoformat()}")
-    ax.legend(loc="upper right", fontsize=8)
+    if locked:
+        ax.legend(loc="upper right", fontsize=8)
     return ax
 
 
@@ -216,7 +220,8 @@ def plot_phase_vs_rotation_phase(result: ScheduleResult, *, ax=None, period_d=No
     ax.set_ylim(0, 1)
     ax.set_xlabel(f"orbital phase (P = {p:g} d)")
     ax.set_ylabel(f"rotation phase (P_rot = {p_rot:g} d)")
-    ax.legend(fontsize=8)
+    if locked:
+        ax.legend(fontsize=8)
     return ax
 
 
@@ -237,13 +242,17 @@ def plot_coverage_vs_n(result: ScheduleResult, *, ax=None, allowed_offsets=None,
     p_rot = result.rotation_period_d if result.rotation_period_d is not None else math.nan
     locked = _offsets(result.locked_dates, result.season_start) or None
 
+    # Below the number of locked epochs there is nothing left to schedule,
+    # so the curve starts where the greedy actually has a choice.
+    first = max(2, len(result.locked_dates))
     if n_values is None:
-        # Below the number of locked epochs there is nothing left to schedule,
-        # so the curve starts where the greedy actually has a choice.
-        first = max(2, len(result.locked_dates))
         n_values = list(range(first, len(result.dates) + 1))
     else:
-        n_values = list(n_values)
+        # Same floor applies to caller-supplied values -- points below it
+        # would all plot the identical locked-only schedule.
+        n_values = [n for n in n_values if n >= first]
+        if not n_values:
+            raise ValueError(f"n_values must include at least one value >= {first}")
 
     # Re-runs the same optimization that produced this result -- same weights,
     # same locked epochs -- so the curve describes the schedule beside it.
@@ -373,6 +382,11 @@ def plot_summary(result: ScheduleResult, *, axes=None, allowed_offsets=None, win
     """
     Four-panel overview: timeline, night availability, phase coverage, and
     largest phase gap versus number of epochs. Returns the four Axes.
+
+    If `result` was built with window, moon, or visibility constraints, pass
+    the same pool as `allowed_offsets` -- without it, the night-availability
+    and coverage-vs-N panels assume the whole season is observable and may
+    not match a constrained result.
     """
     figure = None
     if axes is None:
