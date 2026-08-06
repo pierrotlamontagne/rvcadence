@@ -1,7 +1,7 @@
 """
 Matplotlib figures for a ScheduleResult.
 
-Requires `pip install rvcadence[plot]`. Not re-exported at package level;
+Not re-exported at package level;
 import from here directly. Every function takes the result as its first
 argument, draws into `ax` when given and creates its own figure otherwise,
 and returns the Axes, so the figures compose.
@@ -18,7 +18,7 @@ try:
     import matplotlib.pyplot as plt
 except ImportError as exc:  # pragma: no cover - exercised only without matplotlib
     raise ImportError(
-        "rvcadence.plotting requires matplotlib. Install it with: pip install rvcadence[plot]"
+        "rvcadence.plotting requires matplotlib. Install it with: pip install matplotlib"
     ) from exc
 
 from ._phase import max_phase_gap
@@ -285,8 +285,7 @@ def plot_staralt(
 ):
     """
     Airmass as a function of night and time-of-night, masked to the moments
-    that are dark, above `min_altitude_deg`, and clear of the Moon. Needs
-    `pip install rvcadence[astro]`.
+    that are dark, above `min_altitude_deg`, and clear of the Moon.
 
     Passing `min_moon_sep_deg=None` disables the Moon check entirely, so
     every night is treated as Moon-clear.
@@ -350,7 +349,7 @@ def plot_altitude_sensitivity(
 ):
     """
     Number of visible nights in the season as a function of the altitude cut,
-    to see what a given threshold costs. Needs `pip install rvcadence[astro]`.
+    to see what a given threshold costs.
     """
     if target_coord is None or observer_location is None:
         raise ValueError(
