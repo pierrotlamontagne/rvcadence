@@ -33,6 +33,18 @@ def test_tz_aware_datetime_is_converted_to_utc():
     ) == to_day_offsets([datetime(2026, 5, 3, 12)], SEASON_START)
 
 
+def test_nonzero_utc_offset_shifts_the_night():
+    # 14:00 at +05:00 is 09:00 UTC, which rounds to the night before the naive
+    # reading of the same wall clock does -- so this fails unless the offset is
+    # actually applied rather than the tzinfo merely dropped.
+    assert to_day_offsets(["2026-05-03T14:00:00+05:00"], SEASON_START) == to_day_offsets(
+        ["2026-05-03T09:00:00"], SEASON_START
+    )
+    assert to_day_offsets(["2026-05-03T14:00:00+05:00"], SEASON_START) != to_day_offsets(
+        ["2026-05-03T14:00:00"], SEASON_START
+    )
+
+
 def test_jd_above_the_split():
     # 2026-05-01T00:00:00 UTC is JD 2461161.5.
     assert to_day_offsets([2461161.5, 2461171.5], SEASON_START) == [0, 10]
