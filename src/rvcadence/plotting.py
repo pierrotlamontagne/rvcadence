@@ -278,6 +278,9 @@ def plot_staralt(
     Airmass as a function of night and time-of-night, masked to the moments
     that are dark, above `min_altitude_deg`, and clear of the Moon. Needs
     `pip install rvcadence[astro]`.
+
+    Passing `min_moon_sep_deg=None` disables the Moon check entirely, so
+    every night is treated as Moon-clear.
     """
     if target_coord is None or observer_location is None:
         raise ValueError("target_coord and observer_location are required for plot_staralt")

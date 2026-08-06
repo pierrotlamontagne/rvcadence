@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -19,6 +19,18 @@ def test_datetimes_round_to_the_nearest_day():
 
 def test_iso_strings():
     assert to_day_offsets(["2026-05-01", "2026-05-06T03:00:00"], SEASON_START) == [0, 5]
+
+
+def test_tz_aware_iso_string_is_converted_to_utc():
+    assert to_day_offsets(["2026-05-03T12:00:00Z"], SEASON_START) == to_day_offsets(
+        ["2026-05-03T12:00:00"], SEASON_START
+    )
+
+
+def test_tz_aware_datetime_is_converted_to_utc():
+    assert to_day_offsets(
+        [datetime(2026, 5, 3, 12, tzinfo=timezone.utc)], SEASON_START
+    ) == to_day_offsets([datetime(2026, 5, 3, 12)], SEASON_START)
 
 
 def test_jd_above_the_split():

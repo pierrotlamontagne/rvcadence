@@ -172,6 +172,10 @@ def test_coverage_vs_n_is_monotonically_non_increasing(result):
     for line in ax.lines:
         gaps = list(line.get_ydata())
         assert all(b <= a + 1e-12 for a, b in zip(gaps, gaps[1:])), gaps
+        # A pure non-increasing check passes trivially on a constant curve, so
+        # on its own it can't tell "more epochs help" from "the cut has no
+        # effect" -- require an actual drop across the range to distinguish them.
+        assert gaps[-1] < gaps[0]
 
 
 def test_coverage_vs_n_ends_at_the_actual_schedule(result):

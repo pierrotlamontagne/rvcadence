@@ -169,7 +169,15 @@ def best_candidate(
             continue
         if any(abs(t - s) < min_gap_days for s in selected):
             continue
-        score = evaluate_candidate(t, selected, periods_d, p_rot_d, baseline_days, weights=weights, planet_weights=planet_weights)
+        score = evaluate_candidate(
+            t,
+            selected,
+            periods_d,
+            p_rot_d,
+            baseline_days,
+            weights=weights,
+            planet_weights=planet_weights,
+        )
         if best is None or score.score > best.score:
             best = score
     if best is None:
