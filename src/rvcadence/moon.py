@@ -38,7 +38,12 @@ def is_moon_polluted(
     if not 0.0 <= min_sep_deg <= 180.0:
         raise ValueError(f"min_sep_deg must be within [0, 180], got {min_sep_deg}")
     moon_coord = moon_coord_at_midnight(night, observer_location)
-    return bool(moon_coord.separation(target_coord).deg < min_sep_deg)
+    # Evaluate the separation in the Moon's own observer-centric frame, which is
+    # the apparent angle on the sky from the telescope. The direction is not a
+    # detail: the Moon is close enough that comparing in the target's ICRS frame
+    # instead answers a different question and can differ by tens of degrees.
+    target_same_frame = target_coord.transform_to(moon_coord.frame)
+    return bool(moon_coord.separation(target_same_frame).deg < min_sep_deg)
 
 
 def moon_allowed_offsets(

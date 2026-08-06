@@ -15,6 +15,7 @@ from datetime import timedelta
 import numpy as np
 
 try:
+    import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
 except ImportError as exc:  # pragma: no cover - exercised only without matplotlib
     raise ImportError(
@@ -48,6 +49,18 @@ def _offsets(dates, season_start) -> list[int]:
     return [(d - season_start).days for d in dates]
 
 
+def _date_axis(ax):
+    """
+    Label a date x-axis at whatever density fits. Spelling out every tick as
+    an ISO date overruns the width of a season-long axis, so ticks carry the
+    short form ("May", "Jun") and the year moves to an offset label.
+    """
+    locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+    return ax
+
+
 def plot_timeline(result: ScheduleResult, *, ax=None, windows=None):
     """Scheduled dates across the season, with the allowed windows shaded behind them."""
     ax = _new_ax(ax, (9, 2.0))
@@ -61,7 +74,7 @@ def plot_timeline(result: ScheduleResult, *, ax=None, windows=None):
         ax.vlines(locked, 0, 1, color=_LOCKED_COLOR, lw=1.8, label=_LOCKED_LABEL)
     if new:
         ax.vlines(new, 0, 1, color=_NEW_COLOR, lw=1.2, label=_NEW_LABEL)
-    ax.set_xlabel("date")
+    _date_axis(ax)
     if locked:
         ax.legend(loc="upper right", fontsize=8)
     return ax
@@ -293,11 +306,8 @@ def plot_staralt(
     if target_coord is None or observer_location is None:
         raise ValueError("target_coord and observer_location are required for plot_staralt")
 
-    import warnings
-
     import astropy.units as u
     from astropy.coordinates import AltAz, get_sun
-    from astropy.coordinates.errors import NonRotationTransformationWarning
 
     from .moon import _local_midnight_utc, is_moon_polluted
 
@@ -310,19 +320,14 @@ def plot_staralt(
     dark = np.zeros_like(alt, dtype=bool)
     moon_ok = np.zeros(len(nights), dtype=bool)
 
-    with warnings.catch_warnings():
-        # Moon-to-target separations mix a time-dependent frame with ICRS,
-        # which astropy warns is not a pure rotation. Accuracy here is far
-        # finer than the separation threshold.
-        warnings.simplefilter("ignore", NonRotationTransformationWarning)
-        for i, night in enumerate(nights):
-            times = _local_midnight_utc(night, observer_location) + minutes * u.minute
-            frame = AltAz(obstime=times, location=observer_location)
-            alt[i] = target_coord.transform_to(frame).alt.deg
-            dark[i] = get_sun(times).transform_to(frame).alt.deg <= twilight_sun_alt_deg
-            moon_ok[i] = min_moon_sep_deg is None or not is_moon_polluted(
-                night, target_coord, observer_location, min_sep_deg=min_moon_sep_deg
-            )
+    for i, night in enumerate(nights):
+        times = _local_midnight_utc(night, observer_location) + minutes * u.minute
+        frame = AltAz(obstime=times, location=observer_location)
+        alt[i] = target_coord.transform_to(frame).alt.deg
+        dark[i] = get_sun(times).transform_to(frame).alt.deg <= twilight_sun_alt_deg
+        moon_ok[i] = min_moon_sep_deg is None or not is_moon_polluted(
+            night, target_coord, observer_location, min_sep_deg=min_moon_sep_deg
+        )
 
     observable = dark & moon_ok[:, None] & (alt >= min_altitude_deg)
     with np.errstate(invalid="ignore", divide="ignore"):
